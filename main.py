@@ -95,7 +95,7 @@ async def on_voice_state_update(member, before, after):
 
 # --- INITIALISATION DES BOUTONS ---
 @bot.command()
-@commands.has_permissions(administrator=True)
+@commands.is_owner()
 async def setup(ctx):
     sav_chan = bot.get_channel(ID_SALON_SAV)
     await sav_chan.send("🛡️ **Besoin de Bobby ?** Cliquez sur un bouton ci-dessous :", view=SAVView())
