@@ -22,20 +22,18 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- FORMULAIRE DE SAISIE (MODAL) ---
 class GoalModal(discord.ui.Modal):
-    def __init__(self, category_label):
-        super().__init__(title=f"Aide : {category_label}")
-        self.category_label = category_label
+    def __init__(self, category_label, question_text, placeholder_text):
+        super().__init__(title=f"Demande : {category_label}")
         
         self.goal_input = discord.ui.TextInput(
-            label=f"Pour quel {category_label} as-tu besoin d'aide ?",
-            placeholder="Ex: Koutoulou Hardi, Quête l'Eternel Moissonneur...",
+            label=question_text, # La question personnalisée
+            placeholder=placeholder_text, # L'exemple personnalisé
             required=True,
             max_length=50
         )
         self.add_item(self.goal_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Création du fil avec le nom saisi + pseudo
         thread_name = f"[{self.goal_input.value}] {interaction.user.display_name}"
         
         thread = await interaction.channel.create_thread(
@@ -51,9 +49,8 @@ class GoalModal(discord.ui.Modal):
         btn_close.callback = close_callback
         view.add_item(btn_close)
         
-        await thread.send(f"⚔️ {interaction.user.mention} a besoin d'aide pour : **{self.goal_input.value}**. Qui est dispo ?", view=view)
-        # On répond avec une réponse vide et invisible pour valider l'interaction sans message
-        await interaction.response.send_message("Création en cours...", ephemeral=True, delete_after=1)
+        await thread.send(f"⚔️ **Nouvelle mission !**\n{interaction.user.mention} a besoin d'un coup de main pour : **{self.goal_input.value}**.\nQui est dispo ?", view=view)
+        await interaction.response.send_message("Mission lancée !", ephemeral=True, delete_after=1)
 
 # --- SYSTÈME DE TICKETS SAV ---
 class SAVView(discord.ui.View):
@@ -69,7 +66,6 @@ class SAVView(discord.ui.View):
         await self.create_sav_thread(interaction, "Bug")
 
     async def create_sav_thread(self, interaction, type_t):
-        # On ne deferred pas pour pouvoir envoyer un message direct dans le thread
         thread = await interaction.channel.create_thread(
             name=f"[{type_t}] {interaction.user.display_name}", 
             type=discord.ChannelType.private_thread 
@@ -82,12 +78,11 @@ class SAVView(discord.ui.View):
         btn_close.callback = close_callback
         view.add_item(btn_close)
         
-        msg = (f"🛡️ **Ticket ouvert pour {interaction.user.mention}**\n\n"
-               "Explique-nous ton problème en détail ici. N'hésite pas à envoyer des **screenshots**.")
+        msg = (f"🛡️ **Ticket SAV ouvert pour {interaction.user.mention}**\n\n"
+               "Explique ton souci ici. Tu peux ajouter des **screenshots** pour nous aider !")
         
         await thread.send(msg, view=view)
-        # Message éphémère qui s'auto-supprime après 1 seconde pour ne pas polluer
-        await interaction.response.send_message("Ouverture du ticket...", ephemeral=True, delete_after=1)
+        await interaction.response.send_message("Ouverture...", ephemeral=True, delete_after=1)
 
 # --- SYSTÈME D'ENTRAIDE ---
 class CoopView(discord.ui.View):
@@ -96,19 +91,20 @@ class CoopView(discord.ui.View):
 
     @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="btn_s")
     async def s_btn(self, interaction, button): 
-        await interaction.response.send_modal(GoalModal("Succès"))
+        await interaction.response.send_modal(GoalModal("Succès", "Pour quel succès as-tu besoin d'aide ?", "Koutoulou Hardi, Kabahal Duo, Vortex Focus .."))
 
     @discord.ui.button(label="Quête", style=discord.ButtonStyle.success, custom_id="btn_q")
     async def q_btn(self, interaction, button): 
-        await interaction.response.send_modal(GoalModal("Quête"))
+        await interaction.response.send_modal(GoalModal("Quête", "Pour quelle quête as-tu besoin d'aide ?", "Mission Solution, les Septs Mercemers .."))
 
     @discord.ui.button(label="Farming", style=discord.ButtonStyle.success, custom_id="btn_f")
     async def f_btn(self, interaction, button): 
-        await interaction.response.send_modal(GoalModal("Farming"))
+        await interaction.response.send_modal(GoalModal("Farming", "Que veux-tu farmer ?", "Ressources, XP, Donjon précis..."))
 
     @discord.ui.button(label="Craft/FM", style=discord.ButtonStyle.success, custom_id="btn_c")
     async def c_btn(self, interaction, button): 
-        await interaction.response.send_modal(GoalModal("Craft/FM"))
+        # Ici pas d'exemple (chaîne vide) et question spécifique métier
+        await interaction.response.send_modal(GoalModal("Craft/FM", "De quel métier as-tu besoin ?", ""))
 
 # --- SALONS VOCAUX ---
 @bot.event
@@ -128,11 +124,11 @@ async def on_voice_state_update(member, before, after):
 async def setup(ctx):
     if ctx.author.guild_permissions.administrator:
         sav_chan = bot.get_channel(ID_SALON_SAV)
-        await sav_chan.send("🛡️ **Besoin de Bobby ?** Cliquez ci-dessous pour ouvrir un ticket privé :", view=SAVView())
+        await sav_chan.send("🛡️ **Besoin d'un coup de main technique ?**\nClique ici pour ouvrir un ticket privé :", view=SAVView())
         
         coop_chan = bot.get_channel(ID_SALON_DEMANDE_AIDE)
-        await coop_chan.send("🤝 **Entraide de Guilde**\nCliquez sur une catégorie pour demander de l'aide :", view=CoopView())
-        await ctx.send("✅ Mise à jour effectuée !")
+        await coop_chan.send("🤝 **Entraide Watcher of Knights**\nChoisis une catégorie pour lancer ton appel aux armes :", view=CoopView())
+        await ctx.send("✅ Mise à jour effectuée !", delete_after=3)
 
 @bot.event
 async def on_ready():
