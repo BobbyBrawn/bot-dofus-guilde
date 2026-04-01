@@ -98,4 +98,8 @@ async def on_voice_state_update(member, before, after):
 @commands.has_permissions(administrator=True)
 async def setup(ctx):
     sav_chan = bot.get_channel(ID_SALON_SAV)
-    await sav_chan.send("🛡️ **Besoin de Bobby ?** Cliquez sur un bouton ci-dessous :
+    await sav_chan.send("🛡️ **Besoin de Bobby ?** Cliquez sur un bouton ci-dessous :", view=SAVView())
+    
+    coop_chan = bot.get_channel(ID_SALON_DEMANDE_AIDE)
+    await coop_chan.send("🤝 **Entraide de Guilde**\nChoisissez votre catégorie :", view=CoopView())
+    await ctx.send("Configuration des salons terminée !")
