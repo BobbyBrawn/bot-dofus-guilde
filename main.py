@@ -25,7 +25,7 @@ temp_channels = []
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send(f"⚠️ Commande inconnue ! Vérifie la syntaxe, ou ouvre un ticket dans <#{ID_SALON_SAV}>.")
+        await ctx.send(f"⚠️ Commande inconnue ! Ouvre un ticket dans <#{ID_SALON_SAV}> si besoin.")
 
 # --- 2. SYSTÈME DE TICKETS SAV (THREADS PRIVÉS) ---
 class SAVView(discord.ui.View):
@@ -42,8 +42,6 @@ class SAVView(discord.ui.View):
 
     async def create_sav_thread(self, interaction, type_t):
         await interaction.response.defer(ephemeral=True)
-        
-        # Création d'un thread privé
         thread = await interaction.channel.create_thread(
             name=f"[{type_t}] {interaction.user.display_name}", 
             type=discord.ChannelType.private_thread 
@@ -56,8 +54,13 @@ class SAVView(discord.ui.View):
         btn_close.callback = close_callback
         view.add_item(btn_close)
         
-        await thread.send(f"🛡️ Ticket ouvert pour {interaction.user.mention}. Un responsable va arriver.", view=view)
-        await interaction.followup.send(f"Ton ticket privé a été créé ici : {thread.mention}", ephemeral=True)
+        # Message de bienvenue personnalisé
+        msg = (f"🛡️ **Ticket ouvert pour {interaction.user.mention}**\n\n"
+               "Explique-nous ton problème en détail ici. N'hésite pas à envoyer des **screenshots** "
+               "ou toute info qui pourrait aider Bobby à te répondre au plus vite !")
+        
+        await thread.send(msg, view=view)
+        await interaction.followup.send(f"Ton ticket privé est ici : {thread.mention}", ephemeral=True)
 
 # --- 3. SYSTÈME D'ENTRAIDE (COOP) ---
 class CoopView(discord.ui.View):
@@ -65,30 +68,34 @@ class CoopView(discord.ui.View):
         super().__init__(timeout=None)
 
     async def create_coop_thread(self, interaction, label):
+        # Correction : On utilise followup pour être sûr que l'interaction ne time out pas
         await interaction.response.defer(ephemeral=True)
-        
-        thread = await interaction.channel.create_thread(
-            name=f"[{label}] {interaction.user.display_name}", 
-            type=discord.ChannelType.public_thread
-        )
-        
-        view = discord.ui.View()
-        btn_close = discord.ui.Button(label="Fini !", style=discord.ButtonStyle.grey)
-        async def close_callback(inter):
-            await inter.channel.delete()
-        btn_close.callback = close_callback
-        view.add_item(btn_close)
-        
-        await thread.send(f"⚔️ {interaction.user.mention} a besoin d'aide pour : **{label}**. Qui est dispo ?", view=view)
-        await interaction.followup.send(f"Demande lancée dans {thread.mention} !", ephemeral=True)
+        try:
+            thread = await interaction.channel.create_thread(
+                name=f"[{label}] {interaction.user.display_name}", 
+                type=discord.ChannelType.public_thread,
+                auto_archive_duration=60
+            )
+            
+            view = discord.ui.View()
+            btn_close = discord.ui.Button(label="Fini !", style=discord.ButtonStyle.grey)
+            async def close_callback(inter):
+                await inter.channel.delete()
+            btn_close.callback = close_callback
+            view.add_item(btn_close)
+            
+            await thread.send(f"⚔️ {interaction.user.mention} a besoin d'aide pour : **{label}**. Qui est dispo ?", view=view)
+            await interaction.followup.send(f"Demande lancée dans {thread.mention} !", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"Erreur : Vérifie que Bobby a la permission de créer des fils publics.", ephemeral=True)
 
-    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="btn_s")
     async def s_btn(self, interaction, button): await self.create_coop_thread(interaction, "Succès")
-    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success, custom_id="btn_q")
     async def q_btn(self, interaction, button): await self.create_coop_thread(interaction, "Quête")
-    @discord.ui.button(label="Farming", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Farming", style=discord.ButtonStyle.success, custom_id="btn_f")
     async def f_btn(self, interaction, button): await self.create_coop_thread(interaction, "Farming")
-    @discord.ui.button(label="Craft/FM", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Craft/FM", style=discord.ButtonStyle.success, custom_id="btn_c")
     async def c_btn(self, interaction, button): await self.create_coop_thread(interaction, "Craft/FM")
 
 # --- 4. SALONS VOCAUX DYNAMIQUES ---
@@ -103,8 +110,10 @@ async def on_voice_state_update(member, before, after):
 
     if before.channel and before.channel.id in temp_channels:
         if len(before.channel.members) == 0:
-            await before.channel.delete()
-            temp_channels.remove(before.channel.id)
+            try:
+                await before.channel.delete()
+                temp_channels.remove(before.channel.id)
+            except: pass
 
 # --- INITIALISATION ---
 @bot.command()
@@ -123,9 +132,5 @@ async def on_ready():
     bot.add_view(SAVView())
     bot.add_view(CoopView())
 
-# --- LANCEMENT ---
 token = os.environ.get('DISCORD_TOKEN')
-if token:
-    bot.run(token)
-else:
-    print("❌ Token introuvable !")
+bot.run(token)
