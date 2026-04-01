@@ -49,7 +49,7 @@ class SAVView(discord.ui.View):
             interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
-        channel = await guild.create_text_channel(f"{type_t}-{interaction.user.name}", overwrites=overwrites)
+        channel = await guild.create_text_channel(f"{type_t}-{interaction.user.display_name}", overwrites=overwrites)
         await interaction.response.send_message(f"Ticket créé : {channel.mention}", ephemeral=True)
         await channel.send(f"Bonjour {interaction.user.mention}, un responsable de la guilde va s'occuper de toi ici pour ton {type_t}.")
 
@@ -59,7 +59,7 @@ class CoopView(discord.ui.View):
         super().__init__(timeout=None)
 
     async def create_coop_thread(self, interaction, label):
-        thread = await interaction.channel.create_thread(name=f"[{label}] {interaction.user.name}", type=discord.ChannelType.public_thread)
+        thread = await interaction.channel.create_thread(name=f"[{label}] {interaction.user.display_name}", type=discord.ChannelType.public_thread)
         view = discord.ui.View()
         btn_close = discord.ui.Button(label="Fini !", style=discord.ButtonStyle.grey)
         async def close_callback(inter):
@@ -84,7 +84,7 @@ async def on_voice_state_update(member, before, after):
     if after.channel and after.channel.id in VOCAL_CREATOR_IDS:
         limit = VOCAL_CREATOR_IDS[after.channel.id]
         category = bot.get_channel(ID_CATEGORIE_VOCAL)
-        new_chan = await category.create_voice_channel(name=f"Salon de {member.name}", user_limit=limit)
+        new_chan = await category.create_voice_channel(name=f"🔊 Salon de {member.display_name}", user_limit=limit)
         await member.move_to(new_chan)
         temp_channels.append(new_chan.id)
 
