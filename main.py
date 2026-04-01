@@ -3,10 +3,9 @@ from discord.ext import commands, tasks
 import os
 import json
 import asyncio
-from datetime import datetime, time, timedelta
-import pytz
+from datetime import datetime, time, timedelta, timezone
 
-# --- CONFIGURATION DES IDS ---
+# --- CONFIGURATION ---
 ID_CATEGORIE_VOCAL = 1488846909622849566
 ID_SALON_SAV = 1488846991026032711
 ID_SALON_DEMANDE_AIDE = 1488847060433375294
@@ -16,19 +15,18 @@ ID_SALON_LISTE_DEMANDES = 1488953545930702938
 ID_SALON_CLASSEMENT = 1489021662212128999
 ID_SALON_LOGS = 1489021869133791273
 ID_SALON_NOTIFICATIONS = 1489022043839140010
-ID_SALON_ANNONCES = 1488953370667647076 # Vérifie cet ID si besoin
-ID_SALON_CONFIG = 1488847369322745917 # Ton salon secret
+ID_SALON_ANNONCES = 1488953370667647076 
+ID_SALON_CONFIG = 1488847369322745917
 ID_VOCAL_CREATOR = 1488847294244716544
 
-# Rôles
 ROLE_ALMANAX = 1489021032965738636
 ROLE_ENTRAIDE = 1489021136011530282
 ROLE_ANNONCES = 1489021205011890410
 
-# Ton ID (Bobby)
 MY_USER_ID = 270182770163187712
 
-PARIS_TZ = pytz.timezone("Europe/Paris")
+# Décalage UTC+2 pour Paris (Heure d'été)
+PARIS_TZ = timezone(timedelta(hours=2))
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -40,6 +38,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- MÉMOIRE ---
 def load_data():
     if not os.path.exists("data.json"):
+        with open("data.json", "w") as f:
+            json.dump({"points": {}, "messages": {}, "last_almanax": ""}, f)
         return {"points": {}, "messages": {}, "last_almanax": ""}
     with open("data.json", "r") as f:
         return json.load(f)
@@ -61,7 +61,6 @@ async def post_almanax():
         data = load_data()
         today = datetime.now(PARIS_TZ).strftime("%Y-%m-%d")
         
-        # On ne poste que si c'est un nouveau jour
         if data.get("last_almanax") != today:
             role = channel.guild.get_role(ROLE_ALMANAX)
             embed = discord.Embed(title="📅 Almanax du Jour", description=f"Meryde du {today}", color=discord.Color.gold())
@@ -76,7 +75,7 @@ async def post_almanax():
 async def almanax_loop():
     await post_almanax()
 
-# --- NOTIFICATIONS ---
+# --- NOTIFICATIONS (Boutons) ---
 class NotifView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     async def toggle_role(self, interaction, role_id):
@@ -95,7 +94,7 @@ class NotifView(discord.ui.View):
     @discord.ui.button(label="Annonces", style=discord.ButtonStyle.grey, emoji="📢", custom_id="notif_annonces")
     async def b3(self, i, b): await self.toggle_role(i, ROLE_ANNONCES)
 
-# --- MISSIONS & CLASSEMENT ---
+# --- MISSIONS ---
 class MissionView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
@@ -119,7 +118,6 @@ class GoalModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
-        
         msg = await list_chan.send(f"{role.mention if role else ''}\n📋 **MISSION : {self.goal.value}**\n**Demandeur** : {interaction.user.display_name}")
         thread = await list_chan.create_thread(name=f"Mission-{self.goal.value}", type=discord.ChannelType.private_thread)
         await msg.edit(view=MissionView(thread.id))
@@ -128,7 +126,7 @@ class GoalModal(discord.ui.Modal):
         btn_f = discord.ui.Button(label="Fini !", style=discord.ButtonStyle.success)
         
         async def fini_cb(i):
-            duration = datetime.now(pytz.utc) - thread.created_at
+            duration = datetime.now(timezone.utc) - thread.created_at
             if duration.total_seconds() < 300:
                 await i.response.send_message("Trop rapide pour les points (min 5min).", ephemeral=True)
             else:
@@ -144,7 +142,7 @@ class GoalModal(discord.ui.Modal):
         view_f.add_item(btn_f)
         await thread.send(f"🛡️ Mission lancée ! {interaction.user.mention}, clique sur Fini une fois terminé.", view=view_f)
         await thread.add_user(interaction.user)
-        await interaction.response.send_message("Publié dans la liste !", ephemeral=True)
+        await interaction.response.send_message("Publié !", ephemeral=True)
 
 # --- COMMANDES ---
 @bot.command()
@@ -160,7 +158,6 @@ async def annonce(ctx, *, message):
 async def update(ctx):
     if not ctx.author.guild_permissions.administrator: return
     data = load_data()
-    
     async def update_msg(chan_id, key, text, view):
         chan = bot.get_channel(chan_id)
         msg_id = data["messages"].get(key)
@@ -176,11 +173,10 @@ async def update(ctx):
     await update_msg(ID_SALON_SAV, "sav", "🛡️ **Support Technique**", SAVView())
     await update_msg(ID_SALON_DEMANDE_AIDE, "aide", "🤝 **Entraide de Guilde**", CoopView())
     await update_msg(ID_SALON_NOTIFICATIONS, "notifs", "🔔 **Notifications**", NotifView())
-    
     save_data(data)
     await ctx.send("✅ Mise à jour effectuée.", delete_after=3)
 
-# --- SETUP VIEWS & START ---
+# --- SETUP ---
 class SAVView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Ticket", style=discord.ButtonStyle.danger)
@@ -198,9 +194,9 @@ class CoopView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f"🛡️ Watcher of Knights v4.1 en ligne !")
+    print(f"🛡️ Watcher of Knights v4.2 opérationnel !")
     if not almanax_loop.is_running(): almanax_loop.start()
-    await post_almanax() # Force l'envoi au démarrage si pas déjà fait
+    await post_almanax()
     bot.add_view(SAVView())
     bot.add_view(CoopView())
     bot.add_view(NotifView())
