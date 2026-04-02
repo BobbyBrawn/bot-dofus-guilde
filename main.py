@@ -47,17 +47,18 @@ async def get_almanax_embed(date_str=None):
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200: 
-            print(f"❌ Erreur API : {response.status_code}")
             return None
         
-        # On récupère la réponse brute
         raw_data = response.json()
         
-        # --- RÉPARATION DE LA LISTE ---
-        # Si c'est une liste, on prend le premier élément [0]
-        # Si c'est déjà un dictionnaire, on le garde tel quel
-        data = raw_data[0] if isinstance(raw_data, list) else raw_data
-        # ------------------------------
+        # Vérification si la liste est vide avant d'extraire
+        if isinstance(raw_data, list):
+            if len(raw_data) == 0:
+                print("❌ L'API a renvoyé une liste vide.")
+                return None
+            data = raw_data[0]
+        else:
+            data = raw_data
         
         meryde = data.get("meryde", {}).get("name", "Inconnu")
         bonus = data.get("bonus", {}).get("description", "Pas de bonus")
