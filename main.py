@@ -49,10 +49,8 @@ async def get_almanax_embed():
         
         if not bloc_dofus: return None
 
-        # --- 1. BONUS COMPLET (Inclus le texte en gras) ---
+        # --- 1. BONUS (Nettoyage et formatage) ---
         more_div = bloc_dofus.find("div", class_="more")
-        # On extrait tout le texte du bonus avant la div 'more-infos'
-        # On remplace les balises <b> par du gras Discord (**)
         for b_tag in more_div.find_all("b"):
             b_tag.replace_with(f"**{b_tag.text}**")
         
@@ -65,13 +63,13 @@ async def get_almanax_embed():
         fleft = bloc_dofus.find("p", class_="fleft")
         offrande = fleft.get_text().strip() if fleft else "Offrande"
 
-        # --- 3. IMAGE EN HAUTE RÉSOLUTION ---
+        # --- 3. IMAGE (L'astuce du format) ---
         img_tag = bloc_dofus.find("div", class_="more-infos-content").find("img")
         image_url = img_tag["src"] if img_tag else None
         
         if image_url:
-            # MAGIE : On remplace le petit format .w75h75 par le grand .w200h200
-            image_url = image_url.replace(".w75h75", "")
+            # On demande du 100x100, c'est le max propre pour un thumbnail sans flou
+            image_url = image_url.replace(".w75h75", ".w100h100")
 
         # --- CONSTRUCTION ---
         embed = discord.Embed(
@@ -81,7 +79,9 @@ async def get_almanax_embed():
         )
         
         if image_url:
-            embed.set_image(url=image_url)
+            # Note : Sur Discord Desktop/Mobile, le thumbnail se place 
+            # automatiquement à droite du texte de la description.
+            embed.set_thumbnail(url=image_url)
             
         return embed
 
