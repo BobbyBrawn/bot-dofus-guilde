@@ -39,23 +39,32 @@ def save_data(data):
 # --- ALMANAX ---
 async def get_almanax_embed():
     try:
+        # URL V3 (Standard 2026 pour Dofus Unity / 2.0)
         url = "https://api.dofusdu.de/dofus2/fr/almanax"
-        headers = {"Accept": "application/json", "User-Agent": "WatcherBot/1.0"}
+        headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
         
+        # On essaie d'abord l'URL classique
         response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200: return None
-        
         data = response.json()
 
-        # CORRECTIF : Si l'API renvoie une liste, on prend le premier élément
-        if isinstance(data, list):
-            data = data[0]
+        # Si c'est une liste vide, on tente l'URL "v3" qui est le nouveau standard
+        if not data or (isinstance(data, list) and len(data) == 0):
+            url_v3 = "https://api.dofusdu.de/dofus2/fr/almanax/today"
+            response = requests.get(url_v3, headers=headers, timeout=10)
+            data = response.json()
 
-        # Extraction des infos
-        meryde_name = data.get("meryde", {}).get("name", "Inconnu")
-        bonus_desc = data.get("bonus", {}).get("description", "Pas de bonus")
-        offrande_name = data.get("offering", {}).get("name", "Pas d'offrande")
-        image_url = data.get("meryde", {}).get("image_url", "")
+        # Extraction selon le format dictionnaire direct (standard V3)
+        # On ne force plus le [0] si c'est déjà un dictionnaire
+        item = data[0] if isinstance(data, list) and len(data) > 0 else data
+        
+        if not item or not isinstance(item, dict):
+            print("❌ Données Almanax vides ou mal formées.")
+            return None
+
+        meryde_name = item.get("meryde", {}).get("name", "Inconnu")
+        bonus_desc = item.get("bonus", {}).get("description", "Pas de bonus")
+        offrande_name = item.get("offering", {}).get("name", "Pas d'offrande")
+        image_url = item.get("meryde", {}).get("image_url", "")
 
         embed = discord.Embed(
             title=f"📅 ALMANAX : {meryde_name.upper()}",
@@ -64,14 +73,11 @@ async def get_almanax_embed():
             timestamp=datetime.now()
         )
         if image_url: embed.set_thumbnail(url=image_url)
-        embed.set_footer(text="Source : DofusDuDe")
-        
         return embed
 
     except Exception as e:
         print(f"❌ Erreur Script : {e}")
         return None
-
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
 async def almanax_loop():
     channel = bot.get_channel(ID_SALON_ALMANAX)
