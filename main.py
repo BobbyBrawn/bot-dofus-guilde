@@ -40,58 +40,57 @@ def save_data(data):
 # --- ALMANAX ---
 async def get_almanax_embed():
     url = "https://www.krosmoz.com/fr/almanax"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. Méryde
-        meryde = soup.find("span", class_="title").text.strip()
+        # 1. MERYDE (Extraction sécurisée)
+        meryde_elem = soup.find("span", class_="title")
+        meryde = meryde_elem.get_text().strip() if meryde_elem else "MÉRYDE INCONNU"
         
-        # 2. Bonus (on nettoie les espaces en trop)
-        bonus_div = soup.find("div", id="almanax_event_desc")
-        bonus = bonus_div.text.strip() if bonus_div else "Pas de bonus trouvé"
+        # 2. BONUS (On cherche la description de l'event)
+        bonus_elem = soup.find("div", id="almanax_event_desc")
+        bonus = bonus_elem.get_text(separator="\n").strip() if bonus_elem else "Pas de bonus trouvé aujourd'hui."
         
-        # 3. Offrande & Quête
-        # On cherche le bloc qui contient l'image de l'item et le texte
-        more_div = soup.find("div", class_="more")
-        offrande_brute = "Non trouvée"
+        # 3. OFFRANDE (On cherche l'item et la quête)
+        offrande = "Détails de l'offrande indisponibles."
         item_img_url = None
         
-        if more_div:
-            # On récupère l'image de l'item (l'offrande)
-            img_tag = more_div.find("img")
+        offering_container = soup.find("div", class_="more")
+        if offering_container:
+            # On récupère l'image de l'item si elle existe
+            img_tag = offering_container.find("img")
             if img_tag:
-                item_img_url = img_tag["src"]
+                item_img_url = img_tag.get("src")
             
-            # On nettoie le texte : on enlève "Récupérer", "Ramener", etc.
-            text_parts = more_div.get_text(separator="\n").split("\n")
-            # On filtre les lignes vides et les mots inutiles
-            clean_parts = [p.strip() for p in text_parts if p.strip() and "Récupérer" not in p]
-            offrande_brute = "\n".join(clean_parts)
+            # Nettoyage du texte de l'offrande
+            raw_text = offering_container.get_text(separator="\n").strip()
+            # On enlève les mots techniques du site
+            offrande = raw_text.replace("Récupérer", "").replace("Ramener", "").strip()
 
         # --- CONSTRUCTION DE L'EMBED ---
         embed = discord.Embed(
             title=f"📅 ALMANAX : {meryde.upper()}",
-            description=f"✨ **Bonus**\n\n{bonus}\n\n🙏 **Offrande**\n\n{offrande_brute}",
+            description=f"✨ **Bonus**\n\n{bonus}\n\n🙏 **Offrande**\n\n{offrande}",
             color=0xF1C40F,
             timestamp=datetime.now()
         )
         
-        # Image du Méryde en miniature (en haut à droite)
-        illu_div = soup.find("div", class_="illu")
-        if illu_div and illu_div.find("img"):
-            embed.set_thumbnail(url=illu_div.find("img")["src"])
+        # Image du Méryde (Thumbnail)
+        illu_elem = soup.find("div", class_="illu")
+        if illu_elem and illu_elem.find("img"):
+            embed.set_thumbnail(url=illu_elem.find("img").get("src"))
             
-        # Image de l'OFFRANDE en grande image (en bas) pour le côté "joli"
+        # Image de l'item (Grande image en bas)
         if item_img_url:
             embed.set_image(url=item_img_url)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur mise en forme : {e}")
+        print(f"❌ Erreur Scraping : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
@@ -351,6 +350,6 @@ async def force_almanax(ctx):
             await channel.send(content=f"<@&{ROLE_ALMANAX}>", embed=embed)
             await ctx.send("✅ Almanax posté avec succès.")
     else:
-        await ctx.send("❌ Erreur : Impossible de joindre l'API DofusDuDe.")
+        await ctx.send("❌ Erreur pour la récupération de l'almanax du jour")
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
