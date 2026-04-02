@@ -240,6 +240,11 @@ async def update(ctx):
     msg = await notif_chan.send("🔔 **Notifications**\nClique pour t'abonner :\n\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
     for emoji in ["📅", "⚔️", "📢"]: await msg.add_reaction(emoji)
     data = load_data(); data["notif_msg_id"] = msg.id; save_data(data)
+    # Nettoyage et envoi du module Vocal
+    vocal_chan = bot.get_channel(ID_SALON_CONFIG)
+    if vocal_chan:
+        await vocal_chan.purge(limit=10) # Supprime les anciens boutons
+        await vocal_chan.send("🎙️ **Gestion de ton salon vocal**\nUtilise les boutons ci-dessous pour personnaliser ton salon (tu dois être à l'intérieur).", view=VocalView())
     await ctx.send("✅ Config rafraîchie (v7.2).")
 
 @bot.command()
