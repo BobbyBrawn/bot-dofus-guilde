@@ -128,36 +128,74 @@ class GoalModal(discord.ui.Modal):
         self.add_item(self.goal)
 
     async def on_submit(self, interaction):
-        # 1. On répond TOUT DE SUITE pour éviter l'erreur "Une erreur s'est produite"
-        await interaction.response.send_message("⌛ Création de ton espace d'entraide...", ephemeral=True)
+        # 1. Réponse flash pour Discord
+        await interaction.response.send_message("⌛ Préparation de ton escouade...", ephemeral=True)
         
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
 
-        # 2. Création du FIL PRIVÉ (Caché pour les autres)
-        # On le crée dans le salon de la liste pour qu'il soit bien rangé
+        # 2. NOM DYNAMIQUE DU FIL : "Cible - Pseudo"
+        # On coupe à 80 caractères max pour éviter les bugs de Discord
+        thread_name = f"{self.goal.value[:80]} - {interaction.user.display_name}"
+
+        # 3. Création du FIL PRIVÉ
         thread = await list_chan.create_thread(
-            name=f"🛡️ Mission-{interaction.user.display_name}",
+            name=thread_name,
             type=discord.ChannelType.private_thread
         )
 
-        # 3. On ajoute le demandeur manuellement dans le fil
+        # 4. On ajoute le demandeur
         await thread.add_user(interaction.user)
 
-        # 4. Envoi de l'annonce dans #liste-demande-aide (Visible par tous)
+        # 5. Envoi de l'annonce publique
         announcement = await list_chan.send(
             content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
-            view=MissionView(thread.id) # On donne l'ID du fil au bouton "Dispo"
+            view=MissionView(thread.id)
         )
 
-        # 5. MAPPING (Ton idée d'ID) : On lie le Fil au Message d'annonce
+        # 6. MAPPING (Mémoire)
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
 
-        # 6. Bouton de fin (Rouge) uniquement dans le fil privé
+        # 7. BOUTON ROUGE (On le crée proprement ici)
         view_f = discord.ui.View(timeout=None)
-        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id=f"end_{thread.id}")
+        # On met un custom_id unique avec l'ID du fil
+        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id=f"finish_{thread.id}")
+
+        async def fini_cb(i_end):
+            # Seul le demandeur peut fermer
+            if i_end.user.id == interaction.user.id:
+                current_data = load_data()
+                msg_id = current_data["active_missions"].get(str(thread.id))
+                
+                if msg_id:
+                    try:
+                        # Nettoyage de l'annonce publique
+                        m_del = await list_chan.fetch_message(msg_id)
+                        await m_del.delete()
+                    except: pass
+                    del current_data["active_missions"][str(thread.id)]
+                
+                save_data(current_data)
+                # On prévient et on rase le fil
+                await i_end.response.send_message("Mission accomplie ! Suppression du canal...")
+                await asyncio.sleep(2)
+                await thread.delete()
+            else:
+                await i_end.response.send_message("❌ Seul le demandeur peut clore la mission.", ephemeral=True)
+
+        btn_f.callback = fini_cb
+        view_f.add_item(btn_f)
+        
+        # 8. ENVOI DU BOUTON DANS LE FIL (Dernière étape)
+        await thread.send(
+            content=f"🛡️ **Canal de Mission : {self.category}**\nObjectif : {self.goal.value}\n\n{interaction.user.mention}, clique sur le bouton ci-dessous une fois que c'est fini :",
+            view=view_f
+        )
+        
+        # Confirmation finale
+        await interaction.edit_original_response(content=f"✅ Mission publiée ! Accès ici : <#{thread.id}>")
 
         async def fini_cb(i_end):
             # Seul celui qui a créé la demande peut fermer
