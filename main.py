@@ -6,7 +6,7 @@ import requests
 import asyncio
 from datetime import datetime, time, timedelta, timezone
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Tes IDs) ---
 ID_CATEGORIE_VOCAL = 1488846909622849566
 ID_SALON_SAV = 1488846991026032711
 ID_SALON_DEMANDE_AIDE = 1488847060433375294
@@ -29,13 +29,51 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- MÉMOIRE ---
 def load_data():
     if not os.path.exists("data.json"):
-        with open("data.json", "w") as f: json.dump({"points": {}, "notif_msg_id": 0, "active_missions": {}}, f)
+        with open("data.json", "w") as f: 
+            json.dump({"points": {}, "notif_msg_id": 0, "active_missions": {}}, f)
     with open("data.json", "r") as f: return json.load(f)
 
 def save_data(data):
     with open("data.json", "w") as f: json.dump(data, f, indent=4)
 
-# --- RÉACTIONS NOTIFICATIONS (FIXÉ) ---
+# --- ALMANAX (BOUCLE AUTO) ---
+async def post_almanax():
+    channel = bot.get_channel(ID_SALON_ALMANAX)
+    if not channel: return
+    url = f"https://api.dofusdu.de/dofus2/fr/almanax/{datetime.now(PARIS_TZ).strftime('%Y-%m-%d')}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            embed = discord.Embed(title=f"📅 ALMANAX : {d['boss']['name'].upper()}", color=0xE67E22)
+            embed.set_thumbnail(url=d['tribute']['item']['image_urls']['icon'])
+            embed.add_field(name="✨ Bonus", value=d['bonus']['description'], inline=False)
+            embed.add_field(name="🙏 Offrande", value=f"**{d['tribute']['quantity']}x {d['tribute']['item']['name']}**", inline=False)
+            role = channel.guild.get_role(ROLE_ALMANAX)
+            await channel.send(content=f"{role.mention if role else ''}", embed=embed)
+    except Exception as e:
+        print(f"Erreur Almanax: {e}")
+
+@tasks.loop(time=time(hour=0, minute=1))
+async def almanax_loop(): await post_almanax()
+
+# --- VOCAUX TEMPORAIRES ---
+temp_vocal_channels = []
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if after.channel and after.channel.id == ID_VOCAL_CREATOR:
+        cat = bot.get_channel(ID_CATEGORIE_VOCAL)
+        new_chan = await member.guild.create_voice_channel(name=f"🔊 {member.display_name}", category=cat)
+        await member.move_to(new_chan)
+        temp_vocal_channels.append(new_chan.id)
+    if before.channel and before.channel.id in temp_vocal_channels:
+        if len(before.channel.members) == 0:
+            try:
+                await before.channel.delete()
+                temp_vocal_channels.remove(before.channel.id)
+            except: pass
+
+# --- RÉACTIONS NOTIFICATIONS ---
 @bot.event
 async def on_raw_reaction_add(payload):
     data = load_data()
@@ -43,7 +81,9 @@ async def on_raw_reaction_add(payload):
     guild = bot.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
     role_id = { "📅": ROLE_ALMANAX, "⚔️": ROLE_ENTRAIDE, "📢": ROLE_ANNONCES }.get(str(payload.emoji))
-    if role_id: await member.add_roles(guild.get_role(role_id))
+    if role_id:
+        role = guild.get_role(role_id)
+        if role: await member.add_roles(role)
 
 @bot.event
 async def on_raw_reaction_remove(payload):
@@ -52,14 +92,16 @@ async def on_raw_reaction_remove(payload):
     guild = bot.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
     role_id = { "📅": ROLE_ALMANAX, "⚔️": ROLE_ENTRAIDE, "📢": ROLE_ANNONCES }.get(str(payload.emoji))
-    if role_id: await member.remove_roles(guild.get_role(role_id))
+    if role_id:
+        role = guild.get_role(role_id)
+        if role: await member.remove_roles(role)
 
 # --- ENTRAIDE & MISSIONS ---
 class MissionView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
         self.thread_id = thread_id
-    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v7")
+    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v72")
     async def join(self, interaction, button):
         thread = bot.get_channel(self.thread_id)
         if thread:
@@ -78,42 +120,38 @@ class GoalModal(discord.ui.Modal):
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # 1. Création du fil indépendant (pour éviter la copie du message)
+        # 1. Fil créé d'abord pour un fil épuré
         thread = await list_chan.create_thread(name=f"Mission-{interaction.user.display_name}", type=discord.ChannelType.public_thread)
         
-        # 2. Suppression du message système dans le salon liste
         await asyncio.sleep(1)
         async for message in list_chan.history(limit=5):
             if message.type == discord.MessageType.thread_created:
                 await message.delete()
                 break
 
-        # 3. Envoi du message d'annonce avec le bouton
+        # 2. Annonce avec bouton
         announcement = await list_chan.send(
             content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
         
-        # Sauvegarde du lien Mission <-> Annonce
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
         
-        # 4. Bouton de fin dans le fil
+        # 3. Bouton fin dans le fil
         view_f = discord.ui.View(timeout=None)
         btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger)
         
         async def fini_cb(i):
             if i.user.id == interaction.user.id:
                 data = load_data()
-                # Points
                 data["points"][str(i.user.id)] = data["points"].get(str(i.user.id), 0) + 1
-                # Suppression annonce
                 msg_id = data["active_missions"].get(str(thread.id))
                 if msg_id:
                     try:
-                        msg_to_del = await list_chan.fetch_message(msg_id)
-                        await msg_to_del.delete()
+                        m_del = await list_chan.fetch_message(msg_id)
+                        await m_del.delete()
                     except: pass
                     del data["active_missions"][str(thread.id)]
                 save_data(data)
@@ -127,7 +165,7 @@ class GoalModal(discord.ui.Modal):
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v7")
+    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v72")
     async def cb(self, i, b):
         t = await i.channel.create_thread(name=f"SAV-{i.user.display_name}", type=discord.ChannelType.private_thread)
         await t.send(f"Coucou {i.user.mention}, explique moi ton problème ici, met un max d'infos, des screens si possible, et <@{MY_USER_ID}> se penchera dessus au plus vite !")
@@ -144,6 +182,7 @@ class CoopView(discord.ui.View):
     @discord.ui.button(label="Farming", style=discord.ButtonStyle.secondary, custom_id="c_f")
     async def f(self, i, b): await i.response.send_modal(GoalModal("Farming", "Ex: Donjon Korriandre en boucle"))
 
+# --- COMMANDES ---
 @bot.command()
 async def update(ctx):
     if not ctx.author.guild_permissions.administrator: return
@@ -151,19 +190,24 @@ async def update(ctx):
     await bot.get_channel(ID_SALON_SAV).send("👋 **Besoin d'aide ?**\nOuvre un ticket ici.", view=SAVView())
     await bot.get_channel(ID_SALON_DEMANDE_AIDE).purge(limit=5)
     await bot.get_channel(ID_SALON_DEMANDE_AIDE).send("🤝 **Entraide de Guilde**", view=CoopView())
-    
     notif_chan = bot.get_channel(ID_SALON_NOTIFICATIONS)
     await notif_chan.purge(limit=10)
-    msg = await notif_chan.send("🔔 **Notifications**\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
+    msg = await notif_chan.send("🔔 **Notifications**\nClique pour t'abonner :\n\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
     for emoji in ["📅", "⚔️", "📢"]: await msg.add_reaction(emoji)
-    
-    data = load_data()
-    data["notif_msg_id"] = msg.id
-    save_data(data)
-    await ctx.send("✅ Config rafraîchie.")
+    data = load_data(); data["notif_msg_id"] = msg.id; save_data(data)
+    await ctx.send("✅ Config rafraîchie (v7.2).")
+
+@bot.command()
+async def force_almanax(ctx):
+    if ctx.author.id == MY_USER_ID:
+        await post_almanax()
+        await ctx.send("⚙️ Almanax envoyé.")
 
 @bot.event
 async def on_ready():
-    print(f"🛡️ Watcher v7.0 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
+    print(f"🛡️ Watcher v7.2 opérationnel")
+    bot.add_view(SAVView())
+    bot.add_view(CoopView())
+    if not almanax_loop.is_running(): almanax_loop.start()
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
