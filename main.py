@@ -39,27 +39,36 @@ def save_data(data):
 # --- ALMANAX ---
 async def get_almanax_embed():
     try:
-        # L'API DofusDuDe pour le jour actuel
-        response = requests.get("https://api.dofusdu.de/dofus2/fr/almanax", timeout=10)
-        if response.status_code != 200: return None
+        # On force un User-Agent pour éviter d'être bloqué par l'API
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get("https://api.dofusdu.de/dofus2/fr/almanax", headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            print(f"❌ Erreur API : Code {response.status_code}")
+            return None
         
         data = response.json()
-        # Extraction des infos
-        meryde = data.get("meryde", {}).get("name", "Inconnu")
-        bonus = data.get("bonus", {}).get("description", "Pas de bonus aujourd'hui")
-        offrande = data.get("offering", {}).get("name", "Pas d'offrande")
-        image_url = data.get("meryde", {}).get("image_url", "")
+        
+        # Extraction sécurisée des données
+        meryde_data = data.get("meryde", {})
+        meryde_name = meryde_data.get("name", "Inconnu")
+        meryde_img = meryde_data.get("image_url", "")
+        
+        bonus_desc = data.get("bonus", {}).get("description", "Pas de bonus")
+        offrande_name = data.get("offering", {}).get("name", "Pas d'offrande")
 
         embed = discord.Embed(
-            title=f"📅 ALMANAX : {meryde.upper()}",
-            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{offrande}",
-            color=0xF1C40F, # Jaune or
+            title=f"📅 ALMANAX : {meryde_name.upper()}",
+            description=f"✨ **Bonus**\n{bonus_desc}\n\n🙏 **Offrande**\n{offrande_name}",
+            color=0xF1C40F,
             timestamp=datetime.now()
         )
-        if image_url: embed.set_thumbnail(url=image_url)
-        embed.set_footer(text="Source : DofusDuDe")
+        if meryde_img:
+            embed.set_thumbnail(url=meryde_img)
+        
         return embed
-    except:
+    except Exception as e:
+        print(f"❌ Erreur Script : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
