@@ -102,17 +102,23 @@ class MissionView(discord.ui.View):
         super().__init__(timeout=None)
         self.thread_id = thread_id
 
-    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_mission_v73")
-    async def join(self, interaction, button):
+    @discord.ui.button(label="Je suis dispo pour aider !", emoji="⚔️", style=discord.ButtonStyle.success, custom_id="join_v74")
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 1. On récupère le fil privé grâce à l'ID qu'on a stocké
         thread = bot.get_channel(self.thread_id)
-        if thread:
-            # On ajoute la personne au fil
-            await thread.add_user(interaction.user)
-            # On envoie un petit message de confirmation DANS le fil
-            await thread.send(f"⚔️ {interaction.user.mention} rejoint l'escouade !")
         
-        # On valide l'interaction sans envoyer de message "Interaction réussie" inutile
-        await interaction.response.defer()
+        if thread:
+            # 2. On ajoute l'aidant au fil privé
+            await thread.add_user(interaction.user)
+            
+            # 3. On envoie un petit message de bienvenue DANS LE FIL (pas dans le salon public)
+            await thread.send(f"🛡️ **{interaction.user.display_name}** vient de rejoindre l'escouade !")
+            
+            # 4. On confirme à l'aidant que c'est bon (en message privé/éphémère)
+            await interaction.response.send_message(f"✅ Super ! Tu as été ajouté au fil privé : <#{self.thread_id}>", ephemeral=True)
+        else:
+            # Si le fil a été supprimé entre temps
+            await interaction.response.send_message("❌ Cette mission n'existe plus ou a été terminée.", ephemeral=True)
 
 class GoalModal(discord.ui.Modal):
     def __init__(self, category, placeholder):
@@ -122,51 +128,63 @@ class GoalModal(discord.ui.Modal):
         self.add_item(self.goal)
 
     async def on_submit(self, interaction):
+        # 1. On répond TOUT DE SUITE pour éviter l'erreur "Une erreur s'est produite"
+        await interaction.response.send_message("⌛ Création de ton espace d'entraide...", ephemeral=True)
+        
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
-        
-        # 1. Envoi de l'annonce (Le message parent)
+
+        # 2. Création du FIL PRIVÉ (Caché pour les autres)
+        # On le crée dans le salon de la liste pour qu'il soit bien rangé
+        thread = await list_chan.create_thread(
+            name=f"🛡️ Mission-{interaction.user.display_name}",
+            type=discord.ChannelType.private_thread
+        )
+
+        # 3. On ajoute le demandeur manuellement dans le fil
+        await thread.add_user(interaction.user)
+
+        # 4. Envoi de l'annonce dans #liste-demande-aide (Visible par tous)
         announcement = await list_chan.send(
-            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}"
+            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
+            view=MissionView(thread.id) # On donne l'ID du fil au bouton "Dispo"
         )
 
-        # 2. Création du fil directement attaché au message
-        thread = await announcement.create_thread(
-            name=f"Mission-{interaction.user.display_name}",
-            auto_archive_duration=60
-        )
-        
-        # 3. On ajoute le bouton "Dispo" à l'annonce
-        await announcement.edit(view=MissionView(thread.id))
-
-        # 4. Enregistrement en mémoire
+        # 5. MAPPING (Ton idée d'ID) : On lie le Fil au Message d'annonce
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
-        
-        # 5. Bouton de fin dans le fil
+
+        # 6. Bouton de fin (Rouge) uniquement dans le fil privé
         view_f = discord.ui.View(timeout=None)
         btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id=f"end_{thread.id}")
-        
+
         async def fini_cb(i_end):
+            # Seul celui qui a créé la demande peut fermer
             if i_end.user.id == interaction.user.id:
-                data_now = load_data()
-                msg_id = data_now["active_missions"].get(str(thread.id))
+                current_data = load_data()
+                msg_id = current_data["active_missions"].get(str(thread.id))
+                
+                # Suppression du message d'annonce dans l'autre salon
                 if msg_id:
                     try:
                         m_del = await list_chan.fetch_message(msg_id)
                         await m_del.delete()
                     except: pass
-                    del data_now["active_missions"][str(thread.id)]
-                save_data(data_now)
-                await thread.delete()
-        
+                    del current_data["active_missions"][str(thread.id)]
+                
+                save_data(current_data)
+                await thread.delete() # Suppression du fil privé
+            else:
+                await i_end.response.send_message("Seul le demandeur peut valider la fin !", ephemeral=True)
+
         btn_f.callback = fini_cb
         view_f.add_item(btn_f)
-        await thread.send(f"🛡️ {interaction.user.mention}, clique ici quand c'est fini :", view=view_f)
         
-        # 6. Réponse à l'utilisateur (Crucial pour éviter l'erreur "Une erreur s'est produite")
-        await interaction.response.send_message(f"✅ Ta demande a été postée dans <#{ID_SALON_LISTE_DEMANDES}> !", ephemeral=True)
+        await thread.send(f"⚔️ Bienvenue dans ton canal d'entraide {interaction.user.mention} !\nLes gens qui cliquent sur 'Dispo' apparaîtront ici.\n\nClique ici quand c'est fini :", view=view_f)
+        
+        # Mise à jour du message de confirmation pour l'utilisateur
+        await interaction.edit_original_response(content=f"✅ Mission publiée ! Tu as accès au fil privé : <#{thread.id}>")
 
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
