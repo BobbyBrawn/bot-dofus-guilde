@@ -126,7 +126,7 @@ class MissionView(discord.ui.View):
         await interaction.response.send_message("❌ Impossible de trouver le fil lié.", ephemeral=True)
 
 class FinishView(discord.ui.View):
-    def __init__(self, creator_id):
+    def __init__(self, creator_id=None):
         super().__init__(timeout=None)
         self.creator_id = creator_id
 
