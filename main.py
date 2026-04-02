@@ -50,14 +50,19 @@ async def get_almanax_embed(date_str=None):
             print(f"❌ Erreur API : {response.status_code}")
             return None
         
-        data = response.json()
+        # On récupère la réponse brute
+        raw_data = response.json()
         
-        # Extraction précise des champs de l'API
+        # --- RÉPARATION DE LA LISTE ---
+        # Si c'est une liste, on prend le premier élément [0]
+        # Si c'est déjà un dictionnaire, on le garde tel quel
+        data = raw_data[0] if isinstance(raw_data, list) else raw_data
+        # ------------------------------
+        
         meryde = data.get("meryde", {}).get("name", "Inconnu")
         bonus = data.get("bonus", {}).get("description", "Pas de bonus")
         
         offering_info = data.get("offering", {})
-        # L'API utilise 'item' pour le nom et 'amount' pour la quantité
         offrande_nom = offering_info.get("item", {}).get("name", "Pas d'offrande")
         offrande_qty = offering_info.get("amount", "1")
 
