@@ -27,15 +27,31 @@ PARIS_TZ = timezone(timedelta(hours=2))
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- MÉMOIRE ---
+# --- MÉMOIRE SÉCURISÉE (VOLUME RAILWAY) ---
+DATA_DIR = "data"
+DATA_PATH = os.path.join(DATA_DIR, "data.json")
+
 def load_data():
-    if not os.path.exists("data.json"):
-        with open("data.json", "w") as f: 
-            json.dump({"points": {}, "notif_msg_id": 0, "active_missions": {}}, f)
-    with open("data.json", "r") as f: return json.load(f)
+    # On vérifie si le dossier 'data' existe dans /app/
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+        
+    # Si le fichier n'existe pas encore sur le volume, on le crée
+    if not os.path.exists(DATA_PATH):
+        with open(DATA_PATH, "w") as f: 
+            json.dump({
+                "points": {}, 
+                "notif_msg_id": 0, 
+                "active_missions": {}, 
+                "temp_vocaux": [] 
+            }, f)
+            
+    with open(DATA_PATH, "r") as f: 
+        return json.load(f)
 
 def save_data(data):
-    with open("data.json", "w") as f: json.dump(data, f, indent=4)
+    with open(DATA_PATH, "w") as f: 
+        json.dump(data, f, indent=4)
 
 # --- ALMANAX ---
 import re
@@ -166,13 +182,14 @@ class MissionView(discord.ui.View):
 
     @discord.ui.button(label="Je suis dispo !", emoji="⚔️", style=discord.ButtonStyle.success, custom_id="join_mission_btn")
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Si thread_id est None (cas du reboot), on le récupère via le nom du bouton ou la logique du salon
-        t_id = self.thread_id or interaction.message.id # fallback
-        # Note: En persistance pure, on stocke souvent l'ID dans le custom_id, mais restons simple :
+        # On acquitte l'appui sur le bouton immédiatement et de manière invisible
+        await interaction.response.defer() 
+        
         data = load_data()
-        # On retrouve l'ID du fil car on a stocké {ID_FIL: ID_MESSAGE}
         target_thread_id = None
-        for tid, mid in data["active_missions"].items():
+        
+        # On cherche quel fil est lié à ce message d'annonce via le JSON
+        for tid, mid in data.get("active_missions", {}).items():
             if mid == interaction.message.id:
                 target_thread_id = int(tid)
                 break
@@ -180,11 +197,9 @@ class MissionView(discord.ui.View):
         if target_thread_id:
             thread = bot.get_channel(target_thread_id)
             if thread:
+                # On ajoute l'utilisateur au fil et on prévient l'équipe
                 await thread.add_user(interaction.user)
                 await thread.send(f"🛡️ **{interaction.user.display_name}** a rejoint l'escouade !")
-                await interaction.response.send_message(f"✅ Ajouté au fil : <#{target_thread_id}>", ephemeral=True)
-                return
-        await interaction.response.send_message("❌ Impossible de trouver le fil lié.", ephemeral=True)
 
 class FinishView(discord.ui.View):
     def __init__(self, creator_id=None):
@@ -300,6 +315,38 @@ class CoopView(discord.ui.View):
     @discord.ui.button(label="Farming", emoji="🌾", style=discord.ButtonStyle.secondary, custom_id="c_f_v2")
     async def f(self, i, b): await i.response.send_modal(GoalModal("Farming", "Ex: Donjon Korri en boucle"))
 
+async def check_notif_message():
+    data = load_data()
+    channel = bot.get_channel(ID_SALON_NOTIFICATIONS)
+    if not channel: 
+        print("❌ Salon Notifications introuvable.")
+        return
+
+    msg_id = data.get("notif_msg_id")
+    msg = None
+
+    if msg_id:
+        try:
+            # On tente de récupérer le message via son ID stocké dans le volume
+            msg = await channel.fetch_message(msg_id)
+        except:
+            # Si le message a été supprimé ou n'existe pas, on reste à None
+            msg = None
+
+    # Si pas de message valide, on en crée un tout neuf
+    if not msg:
+        print("🔔 Message de notifications manquant ou expiré, création...")
+        await channel.purge(limit=5)
+        msg = await channel.send("🔔 **Choisis tes Notifications**\n\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**\n\n*Réagis avec l'emoji correspondant pour obtenir le rôle.*")
+        for emoji in ["📅", "⚔️", "📢"]: 
+            await msg.add_reaction(emoji)
+        
+        # On met à jour l'ID dans le volume pour le prochain reboot
+        data["notif_msg_id"] = msg.id
+        save_data(data)
+    else:
+        print("🔔 Message de notifications détecté et opérationnel.")
+
 # --- COMMANDES ---
 @bot.command()
 async def update(ctx, module=None):
@@ -338,17 +385,28 @@ async def update(ctx, module=None):
                 save_data(data)
 
     await ctx.send(f"✅ Mise à jour terminée pour : {', '.join(to_update)}")
-    
+
 @bot.event
 async def on_ready():
-    print(f"🛡️ Watcher v7.2 opérationnel")
-    # ENREGISTREMENT DE TOUTES LES VUES POUR LA PERSISTANCE
+    print(f"🛡️ Watcher v7.5 - Système de survie activé")
+    
+    # 1. On enregistre TOUTES les vues pour la persistance des boutons
+    # C'est ce qui permet aux vieux boutons de répondre encore au clic
     bot.add_view(SAVView())
     bot.add_view(CoopView())
     bot.add_view(VocalView())
-    bot.add_view(MissionView()) # ESSENTIEL
-    bot.add_view(FinishView())  # ESSENTIEL
-    if not almanax_loop.is_running(): almanax_loop.start()
+    bot.add_view(MissionView()) 
+    bot.add_view(FinishView())  
+    
+    # 2. On lance la vérification automatique des notifications
+    await check_notif_message()
+    
+    # 3. On lance la boucle Almanax
+    if not almanax_loop.is_running(): 
+        almanax_loop.start()
+        
+    print("✅ Tout est opérationnel et branché sur le Volume.")
+    
 @bot.command()
 async def force_almanax(ctx):
     if not ctx.author.guild_permissions.administrator: return
