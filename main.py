@@ -37,25 +37,40 @@ def save_data(data):
     with open("data.json", "w") as f: json.dump(data, f, indent=4)
 
 # --- ALMANAX ---
-async def post_almanax():
+async def get_almanax_embed():
+    try:
+        # L'API DofusDuDe pour le jour actuel
+        response = requests.get("https://api.dofusdu.de/dofus2/fr/almanax", timeout=10)
+        if response.status_code != 200: return None
+        
+        data = response.json()
+        # Extraction des infos
+        meryde = data.get("meryde", {}).get("name", "Inconnu")
+        bonus = data.get("bonus", {}).get("description", "Pas de bonus aujourd'hui")
+        offrande = data.get("offering", {}).get("name", "Pas d'offrande")
+        image_url = data.get("meryde", {}).get("image_url", "")
+
+        embed = discord.Embed(
+            title=f"📅 ALMANAX : {meryde.upper()}",
+            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{offrande}",
+            color=0xF1C40F, # Jaune or
+            timestamp=datetime.now()
+        )
+        if image_url: embed.set_thumbnail(url=image_url)
+        embed.set_footer(text="Source : DofusDuDe")
+        return embed
+    except:
+        return None
+
+@tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
+async def almanax_loop():
     channel = bot.get_channel(ID_SALON_ALMANAX)
     if not channel: return
-    url = f"https://api.dofusdu.de/dofus2/fr/almanax/{datetime.now(PARIS_TZ).strftime('%Y-%m-%d')}"
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            d = r.json()
-            embed = discord.Embed(title=f"📅 ALMANAX : {d['boss']['name'].upper()}", color=0xE67E22)
-            embed.set_thumbnail(url=d['tribute']['item']['image_urls']['icon'])
-            embed.add_field(name="✨ Bonus", value=d['bonus']['description'], inline=False)
-            embed.add_field(name="🙏 Offrande", value=f"**{d['tribute']['quantity']}x {d['tribute']['item']['name']}**", inline=False)
-            role = channel.guild.get_role(ROLE_ALMANAX)
-            await channel.send(content=f"{role.mention if role else ''}", embed=embed)
-    except Exception as e:
-        print(f"Erreur Almanax: {e}")
 
-@tasks.loop(time=time(hour=0, minute=1))
-async def almanax_loop(): await post_almanax()
+    embed = await get_almanax_embed()
+    if embed:
+        # On mentionne le rôle pour ceux qui veulent la notif
+        await channel.send(content=f"<@&{ROLE_ALMANAX}>", embed=embed)
 
 # --- VOCAUX ---
 temp_vocal_channels = []
@@ -288,5 +303,19 @@ async def on_ready():
     bot.add_view(MissionView()) # ESSENTIEL
     bot.add_view(FinishView())  # ESSENTIEL
     if not almanax_loop.is_running(): almanax_loop.start()
+@bot.command()
+async def force_almanax(ctx):
+    if not ctx.author.guild_permissions.administrator: return
+    
+    await ctx.send("🔍 Récupération de l'Almanax en cours...")
+    embed = await get_almanax_embed()
+    
+    if embed:
+        channel = bot.get_channel(ID_SALON_ALMANAX)
+        if channel:
+            await channel.send(content=f"<@&{ROLE_ALMANAX}>", embed=embed)
+            await ctx.send("✅ Almanax posté avec succès.")
+    else:
+        await ctx.send("❌ Erreur : Impossible de joindre l'API DofusDuDe.")
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
