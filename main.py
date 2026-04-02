@@ -16,6 +16,7 @@ ID_SALON_LISTE_DEMANDES = 1488953545930702938
 ID_SALON_CONFIG = 1488953466494652446
 ID_SALON_NOTIFICATIONS = 1489022043839140010
 ID_VOCAL_CREATOR = 1488847294244716544
+ID_SALON_ANNONCES = 1489302420684279938
 
 ROLE_ALMANAX = 1489021032965738636
 ROLE_ENTRAIDE = 1489021136011530282
@@ -385,6 +386,30 @@ async def update(ctx, module=None):
                 save_data(data)
 
     await ctx.send(f"✅ Mise à jour terminée pour : {', '.join(to_update)}")
+
+@bot.command()
+async def annonce(ctx, *, message=None):
+    # Sécurité : Seul toi ou un admin peut utiliser cette commande
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.send("❌ Tu n'as pas la permission de faire une annonce.")
+
+    if not message:
+        return await ctx.send("❓ Utilisation : `!annonce Ton texte ici`")
+
+    channel = bot.get_channel(ID_SALON_ANNONCES)
+    role_annonces = ctx.guild.get_role(ROLE_ANNONCES)
+
+    if channel:
+        # On construit l'annonce
+        texte_final = f"{role_annonces.mention if role_annonces else ''}\n\n{message}"
+        
+        # Envoi dans le salon officiel
+        await channel.send(texte_final)
+        
+        # Confirmation discrète pour toi
+        await ctx.message.add_reaction("✅")
+    else:
+        await ctx.send("❌ Impossible de trouver le salon des annonces.")
 
 @bot.event
 async def on_ready():
