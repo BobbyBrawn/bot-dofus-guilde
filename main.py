@@ -40,67 +40,62 @@ def save_data(data):
 # --- ALMANAX ---
 async def get_almanax_embed():
     url = "https://www.krosmoz.com/fr/almanax"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. NOM DU MERYDE
-        meryde_tag = soup.find("span", class_="title")
-        meryde = meryde_tag.get_text().strip() if meryde_tag else "MÉRYDE"
+        # 1. On cible le bloc spécifique que tu m'as donné
+        main_div = soup.find("div", id="achievement_dofus")
+        if not main_div:
+            return None
 
-        # 2. BONUS (On vire le texte inutile)
-        bonus_tag = soup.find("div", id="almanax_event_desc")
-        bonus = "Pas de bonus trouvé."
-        if bonus_tag:
-            # On prend le texte et on enlève les espaces/sauts de ligne en trop au début/fin
-            bonus = bonus_tag.get_text().strip()
+        # 2. Extraction du Bonus (Le texte après "Bonus :")
+        # On cherche le texte dans la div 'more' en ignorant les sous-divs
+        more_div = main_div.find("div", class_="more")
+        bonus_complet = more_div.get_text(separator="|").split("|")[0].strip()
 
-        # 3. OFFRANDE (On découpe précisément le texte "plus d'infos")
-        offrande_finale = "Détails non trouvés."
-        item_img_url = None
+        # 3. Extraction de la Quête
+        quete_p = main_div.find("div", class_="more-infos").find("p")
+        quete_nom = quete_p.get_text().strip() if quete_p else "Quête inconnue"
+
+        # 4. Extraction de l'Item et Quantité
+        item_p = main_div.find("p", class_="fleft")
+        # On nettoie le texte pour virer "Récupérer" et "et rapporter..."
+        offrande_texte = item_p.get_text().strip() if item_p else "Offrande inconnue"
         
-        more_info = soup.find("div", class_="more")
-        if more_info:
-            # On récupère l'image de l'ITEM spécifiquement
-            img = more_info.find("img")
-            if img:
-                item_img_url = img.get("src")
-            
-            # On extrait les lignes et on ne garde que celles qui contiennent l'offrande
-            lines = [l.strip() for l in more_info.get_text(separator="\n").split("\n") if l.strip()]
-            # Souvent la quête est en premier, l'item en deuxième
-            if len(lines) >= 2:
-                offrande_finale = f"**{lines[0]}**\n{lines[1]}"
-            else:
-                offrande_finale = "\n".join(lines)
+        # 5. L'IMAGE de l'item (L'abreuvoir)
+        item_img = main_div.find("div", class_="more-infos-content").find("img")["src"]
 
-        # --- MISE EN PAGE DE L'EMBED ---
+        # --- MISE EN PAGE ---
         embed = discord.Embed(
-            title=f"📅 ALMANAX : {meryde.upper()}",
-            description=(
-                f"✨ **Bonus**\n\n{bonus}\n\n"
-                f"**-------------------------------------------**\n\n"
-                f"🙏 **Offrande**\n\n{offrande_finale}"
-            ),
+            title="📅 ALMANAX DU JOUR",
             color=0xF1C40F,
             timestamp=datetime.now()
         )
         
-        # Image du Méryde en haut à droite (Thumbnail)
-        illu = soup.find("div", class_="illu")
-        if illu and illu.find("img"):
-            embed.set_thumbnail(url=illu.find("img").get("src"))
-            
-        # Image de l'OFFRANDE (Grande image en bas)
-        if item_img_url:
-            embed.set_image(url=item_img_url)
+        # On sépare bien Bonus et Offrande
+        embed.add_field(
+            name="✨ Bonus", 
+            value=f"{bonus_complet}\n\u200b", # \u200b ajoute un espace invisible pour aérer
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🙏 Offrande", 
+            value=f"**{quete_nom}**\n{offrande_texte}", 
+            inline=False
+        )
+
+        # On met l'image de l'item en grand
+        if item_img:
+            embed.set_image(url=item_img)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur Mise en page : {e}")
+        print(f"❌ Erreur Scraping Précis : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
