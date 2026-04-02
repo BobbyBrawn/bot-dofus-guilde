@@ -161,38 +161,29 @@ class GoalModal(discord.ui.Modal):
         self.add_item(self.goal)
 
     async def on_submit(self, interaction):
-        # 1. Silence radio immédiat
         await interaction.response.defer(ephemeral=True)
         
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # 2. Création du fil privé (ID_DEMANDE = thread.id)
+        # 1. Création du fil
         thread_name = f"{self.goal.value[:80]} - {interaction.user.display_name}"
         thread = await list_chan.create_thread(name=thread_name, type=discord.ChannelType.private_thread)
-        
-        # 3. On met le demandeur dedans
         await thread.add_user(interaction.user)
 
-        # 4. Envoi de l'annonce dans la LISTE avec le bouton "Dispo"
+        # 2. Envoi de l'annonce
         announcement = await list_chan.send(
-            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
+            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
 
-        # 5. MAPPING : On associe l'ID du fil à l'ID du message d'annonce dans le JSON
-        data = load_data()
-        data["active_missions"][str(thread.id)] = announcement.id
-        save_data(data)
-
-        # 6. ENVOI DU BOUTON (Via la nouvelle classe FinishView)
-        # On lui donne toutes les infos pour qu'il sache quoi supprimer plus tard
-        view_f = FinishView(thread.id, announcement.id, list_chan.id, interaction.user.id)
-        
-        await thread.send(
-            content=f"⚔️ {interaction.user.mention}, ton canal d'entraide est prêt.\n\nClique sur le bouton ci-dessous quand la mission est finie :",
-            view=view_f
-        )
+        # 3. TEST : Est-ce que le bot arrive ici ?
+        try:
+            view_f = FinishView(thread.id, announcement.id, list_chan.id, interaction.user.id)
+            await thread.send(content="Test : Le bouton arrive...", view=view_f)
+        except Exception as e:
+            # Si ça plante, le bot va l'écrire dans le fil pour nous dire pourquoi !
+            await thread.send(content=f"❌ Erreur lors de la création du bouton : {e}")
 
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
