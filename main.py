@@ -122,23 +122,26 @@ class MissionView(discord.ui.View):
             
 class FinishView(discord.ui.View):
     def __init__(self, thread_id, announcement_id, list_chan_id, creator_id):
+        # On enlève le timeout pour que le bouton ne périme jamais
         super().__init__(timeout=None)
         self.thread_id = thread_id
         self.announcement_id = announcement_id
         self.list_chan_id = list_chan_id
         self.creator_id = creator_id
 
-    @discord.ui.button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id="finish_mission_btn")
+    # On donne un ID unique au bouton qui contient l'ID du créateur pour vérifier
+    @discord.ui.button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id="persistent_finish_btn")
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # On vérifie que c'est bien le créateur qui clique
         if interaction.user.id == self.creator_id:
             list_chan = bot.get_channel(self.list_chan_id)
-            thread = bot.get_channel(self.thread_id)
             
             # 1. Suppression de l'annonce
             try:
                 msg = await list_chan.fetch_message(self.announcement_id)
                 await msg.delete()
-            except: pass
+            except: 
+                print("Annonce déjà supprimée ou introuvable.")
             
             # 2. Nettoyage JSON
             data = load_data()
@@ -146,10 +149,10 @@ class FinishView(discord.ui.View):
                 del data["active_missions"][str(self.thread_id)]
             save_data(data)
             
-            # 3. Suppression du fil
-            await interaction.response.send_message("✅ Mission close, suppression...")
-            await asyncio.sleep(1)
-            await thread.delete()
+            # 3. Message de fin et suppression du fil
+            await interaction.response.send_message("✅ Mission close, suppression du canal...")
+            await asyncio.sleep(2)
+            await interaction.channel.delete()
         else:
             await interaction.response.send_message("❌ Seul le demandeur peut clore la mission.", ephemeral=True)
             
@@ -161,29 +164,38 @@ class GoalModal(discord.ui.Modal):
         self.add_item(self.goal)
 
     async def on_submit(self, interaction):
+        # 1. Travail en silence
         await interaction.response.defer(ephemeral=True)
         
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # 1. Création du fil
+        # 2. Nom du fil : "Objectif - Pseudo"
         thread_name = f"{self.goal.value[:80]} - {interaction.user.display_name}"
+        
+        # 3. Création du fil privé et ajout du demandeur
         thread = await list_chan.create_thread(name=thread_name, type=discord.ChannelType.private_thread)
         await thread.add_user(interaction.user)
 
-        # 2. Envoi de l'annonce
+        # 4. Envoi de l'annonce publique dans #liste-demande-en-cours
         announcement = await list_chan.send(
-            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Objectif** : {self.goal.value}",
+            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
 
-        # 3. TEST : Est-ce que le bot arrive ici ?
-        try:
-            view_f = FinishView(thread.id, announcement.id, list_chan.id, interaction.user.id)
-            await thread.send(content="Test : Le bouton arrive...", view=view_f)
-        except Exception as e:
-            # Si ça plante, le bot va l'écrire dans le fil pour nous dire pourquoi !
-            await thread.send(content=f"❌ Erreur lors de la création du bouton : {e}")
+        # 5. MAPPING : On lie l'ID du fil à l'ID de l'annonce dans le JSON
+        data = load_data()
+        data["active_missions"][str(thread.id)] = announcement.id
+        save_data(data)
+
+        # 6. ENVOI DU BOUTON ROUGE (Via la classe FinishView)
+        # On passe toutes les infos nécessaires pour que le bouton sache quoi supprimer
+        view_f = FinishView(thread.id, announcement.id, list_chan.id, interaction.user.id)
+        
+        await thread.send(
+            content=f"⚔️ **Canal d'entraide ouvert !**\n\n{interaction.user.mention}, tes alliés apparaîtront ici au fur et à mesure.\nClique sur le bouton ci-dessous pour déclarer la mission comme **terminée** :",
+            view=view_f
+        )
 
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
