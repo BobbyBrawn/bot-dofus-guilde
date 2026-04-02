@@ -38,6 +38,8 @@ def save_data(data):
     with open("data.json", "w") as f: json.dump(data, f, indent=4)
 
 # --- ALMANAX ---
+import re
+
 async def get_almanax_embed():
     url = "https://www.krosmoz.com/fr/almanax"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -49,11 +51,10 @@ async def get_almanax_embed():
         
         if not bloc_dofus: return None
 
-        # --- 1. BONUS (Nettoyage et formatage) ---
+        # --- 1. BONUS ---
         more_div = bloc_dofus.find("div", class_="more")
         for b_tag in more_div.find_all("b"):
             b_tag.replace_with(f"**{b_tag.text}**")
-        
         bonus_complet = more_div.get_text(separator=" ").split("Quête")[0].strip()
 
         # --- 2. QUÊTE ET OFFRANDE ---
@@ -61,32 +62,39 @@ async def get_almanax_embed():
         quete = more_infos.find("p").get_text().strip() if more_infos else "Quête"
         
         fleft = bloc_dofus.find("p", class_="fleft")
-        offrande = fleft.get_text().strip() if fleft else "Offrande"
+        offrande_brute = fleft.get_text().strip() if fleft else "Offrande"
 
-        # --- 3. IMAGE (L'astuce du format) ---
+        # --- 3. MAGIE : RÉCUPÉRATION DE L'IMAGE DOFUSDB ---
+        # On extrait l'ID de l'item depuis l'URL d'Ankama (ex: 93001)
         img_tag = bloc_dofus.find("div", class_="more-infos-content").find("img")
-        image_url = img_tag["src"] if img_tag else None
-        
-        if image_url:
-            # On demande du 100x100, c'est le max propre pour un thumbnail sans flou
-            image_url = image_url.replace(".w75h75", ".w100h100")
+        item_id = "0"
+        if img_tag:
+            src = img_tag["src"]
+            # On cherche les chiffres dans l'URL de l'image
+            match = re.search(r'/(\d+)\.', src)
+            if match:
+                item_id = match.group(1)
+
+        # On construit l'URL de DofusDB (Images HD 200x200 ou plus)
+        # Si l'ID est trouvé, on utilise le CDN de DofusDB qui est super propre
+        image_hd = f"https://api.dofusdb.fr/img/items/{item_id}.png"
 
         # --- CONSTRUCTION ---
         embed = discord.Embed(
             title="📅 ALMANAX DU JOUR",
-            description=f"✨ **Bonus**\n{bonus_complet}\n\n🙏 **Offrande**\n**{quete}**\n{offrande}",
-            color=0xF1C40F
+            description=f"✨ **Bonus**\n{bonus_complet}\n\n🙏 **Offrande**\n**{quete}**\n{offrande_brute}",
+            color=0xF1C40F,
+            timestamp=datetime.now()
         )
         
-        if image_url:
-            # Note : Sur Discord Desktop/Mobile, le thumbnail se place 
-            # automatiquement à droite du texte de la description.
-            embed.set_thumbnail(url=image_url)
+        # On remet en GRAND en bas, mais avec une image HD
+        if item_id != "0":
+            embed.set_image(url=image_hd)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur : {e}")
+        print(f"❌ Erreur Image/Scraping : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
