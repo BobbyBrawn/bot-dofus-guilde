@@ -23,7 +23,9 @@ ROLE_ANNONCES = 1489021205011890410
 MY_USER_ID = 270182770163187712
 PARIS_TZ = timezone(timedelta(hours=2))
 
+# --- SETUP INTENTS (CRUCIAL POUR LE VOCAL) ---
 intents = discord.Intents.all()
+intents.voice_states = True # On force l'écoute du vocal
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- MÉMOIRE ---
@@ -40,18 +42,20 @@ temp_vocal_channels = []
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Création du salon
+    # Création du salon quand on entre dans "Créer un salon"
     if after.channel and after.channel.id == ID_VOCAL_CREATOR:
         category = bot.get_channel(ID_CATEGORIE_VOCAL)
         new_chan = await member.guild.create_voice_channel(name=f"🔊 {member.display_name}", category=category)
         await member.move_to(new_chan)
         temp_vocal_channels.append(new_chan.id)
     
-    # Suppression si vide
+    # Suppression si le salon créé devient vide
     if before.channel and before.channel.id in temp_vocal_channels:
         if len(before.channel.members) == 0:
-            await before.channel.delete()
-            temp_vocal_channels.remove(before.channel.id)
+            try:
+                await before.channel.delete()
+                temp_vocal_channels.remove(before.channel.id)
+            except: pass
 
 # --- RÉACTIONS NOTIFICATIONS ---
 @bot.event
@@ -72,12 +76,12 @@ async def on_raw_reaction_remove(payload):
     role_id = { "📅": ROLE_ALMANAX, "⚔️": ROLE_ENTRAIDE, "📢": ROLE_ANNONCES }.get(str(payload.emoji))
     if role_id: await member.remove_roles(guild.get_role(role_id))
 
-# --- ENTRAIDE & MISSIONS ---
+# --- MISSIONS ---
 class MissionView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
         self.thread_id = thread_id
-    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v68")
+    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v69")
     async def join(self, interaction, button):
         thread = bot.get_channel(self.thread_id)
         if thread:
@@ -135,7 +139,7 @@ class GoalModal(discord.ui.Modal):
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v68")
+    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v69")
     async def cb(self, i, b):
         t = await i.channel.create_thread(name=f"SAV-{i.user.display_name}", type=discord.ChannelType.private_thread)
         await t.send(f"Coucou {i.user.mention}, explique moi ton problème ici, met un max d'infos, des screens si possible, et <@{MY_USER_ID}> se penchera dessus au plus vite !")
@@ -143,13 +147,13 @@ class SAVView(discord.ui.View):
 
 class CoopView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="c_s")
+    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="c_s_69")
     async def s(self, i, b): await i.response.send_modal(GoalModal("Succès", "Ex: Koutoulou Hardi"))
-    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success, custom_id="c_q")
+    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success, custom_id="c_q_69")
     async def q(self, i, b): await i.response.send_modal(GoalModal("Quête", "Ex: Combat final Bolgrot"))
-    @discord.ui.button(label="Craft/FM", style=discord.ButtonStyle.primary, custom_id="c_c")
+    @discord.ui.button(label="Craft/FM", style=discord.ButtonStyle.primary, custom_id="c_c_69")
     async def c(self, i, b): await i.response.send_modal(GoalModal("Craft/FM", "Ex: Craft Voile d'Encre / FM dague Erhy"))
-    @discord.ui.button(label="Farming", style=discord.ButtonStyle.secondary, custom_id="c_f")
+    @discord.ui.button(label="Farming", style=discord.ButtonStyle.secondary, custom_id="c_f_69")
     async def f(self, i, b): await i.response.send_modal(GoalModal("Farming", "Ex: Donjon Korriandre en boucle"))
 
 @bot.command()
@@ -161,13 +165,13 @@ async def update(ctx):
     await bot.get_channel(ID_SALON_DEMANDE_AIDE).send("🤝 **Entraide de Guilde**", view=CoopView())
     notif_chan = bot.get_channel(ID_SALON_NOTIFICATIONS)
     await notif_chan.purge(limit=10)
-    msg = await notif_chan.send("🔔 **Notifications**\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
+    msg = await notif_chan.send("🔔 **Notifications de la Guilde**\nClique sur les icônes :\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
     for emoji in ["📅", "⚔️", "📢"]: await msg.add_reaction(emoji)
     data = load_data(); data["notif_msg_id"] = msg.id; save_data(data)
     await ctx.send("✅ Config rafraîchie.")
 
 @bot.event
 async def on_ready():
-    print(f"🛡️ Watcher v6.8 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
+    print(f"🛡️ Watcher v6.9 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
