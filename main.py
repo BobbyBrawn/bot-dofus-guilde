@@ -126,32 +126,30 @@ class MissionView(discord.ui.View):
         await interaction.response.send_message("❌ Impossible de trouver le fil lié.", ephemeral=True)
 
 class FinishView(discord.ui.View):
-    def __init__(self, creator_id=None):
+    def __init__(self, creator_id):
         super().__init__(timeout=None)
         self.creator_id = creator_id
 
     @discord.ui.button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id="persistent_finish_btn")
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = load_data()
-        thread_id_str = str(interaction.channel.id)
-        
-        # Sécurité : Si le bot a rebooté, on ne connaît pas le creator_id. 
-        # Mais on peut vérifier si l'user est celui qui a lancé le fil (nom du fil contient son pseudo)
-        if self.creator_id and interaction.user.id != self.creator_id:
+        if interaction.user.id != self.creator_id:
             return await interaction.response.send_message("❌ Seul le demandeur peut clore la mission.", ephemeral=True)
 
-        list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
+        await interaction.response.defer()
+        data = load_data()
+        thread_id_str = str(interaction.channel.id)
         msg_id = data["active_missions"].get(thread_id_str)
 
         if msg_id:
             try:
+                list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
                 msg = await list_chan.fetch_message(msg_id)
                 await msg.delete()
             except: pass
             del data["active_missions"][thread_id_str]
             save_data(data)
 
-        await interaction.response.send_message("✅ Mission close, suppression...")
+        await interaction.followup.send("✅ Mission close, suppression...")
         await asyncio.sleep(2)
         await interaction.channel.delete()
 
@@ -167,26 +165,27 @@ class GoalModal(discord.ui.Modal):
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # Nom sécurisé (max 100 car)
-        clean_goal = self.goal.value[:70]
-        thread_name = f"{clean_goal} - {interaction.user.display_name}"
-        
+        # Création du fil
+        thread_name = f"{self.goal.value[:70]} - {interaction.user.display_name}"
         thread = await list_chan.create_thread(name=thread_name, type=discord.ChannelType.private_thread)
         await thread.add_user(interaction.user)
 
+        # Envoi de l'annonce (on récupère l'ID pour le mapping)
         announcement = await list_chan.send(
             content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
 
+        # Mapping immédiat
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
 
-        # Envoi du bouton rouge
+        # ENVOI DU BOUTON (On ne passe QUE l'ID de l'user pour éviter tout crash d'init)
+        view_f = FinishView(interaction.user.id)
         await thread.send(
             content=f"⚔️ **Canal ouvert !**\n{interaction.user.mention}, clique ici une fois fini :",
-            view=FinishView(interaction.user.id)
+            view=view_f
         )
 
 # --- AUTRES VIEWS ---
