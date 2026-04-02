@@ -175,15 +175,46 @@ class VocalView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Nommer le salon", style=discord.ButtonStyle.primary, custom_id="voc_name")
+    @discord.ui.button(label="Nommer le salon", emoji="📝", style=discord.ButtonStyle.primary, custom_id="voc_name")
     async def rename(self, interaction, button):
-        # Ici on vérifie si l'utilisateur est dans son propre salon temp
+        # Vérification : l'utilisateur est-il dans un salon créé par le bot ?
         if interaction.user.voice and interaction.user.voice.channel.id in temp_vocal_channels:
-             # Je te donnerai le code du Modal si tu veux aller plus loin, 
-             # mais déjà, avec la vue enregistrée, l'erreur "Echec" disparaîtra.
-             await interaction.response.send_message("Fonction bientôt active", ephemeral=True)
+            
+            # On crée la petite fenêtre (Modal) pour taper le nom
+            modal = discord.ui.Modal(title="Renommer ton salon")
+            name_input = discord.ui.TextInput(label="Nouveau nom", placeholder="Ex: Donjon Korri", min_length=2, max_length=20)
+            modal.add_item(name_input)
+
+            # Ce qui se passe quand on valide le nom
+            async def on_modal_submit(int_modal):
+                await interaction.user.voice.channel.edit(name=f"🔊 {name_input.value}")
+                await int_modal.response.defer() # Ferme la fenêtre sans message d'erreur
+
+            modal.on_submit = on_modal_submit
+            await interaction.response.send_modal(modal)
         else:
-             await interaction.response.send_message("Tu dois être dans ton salon vocal !", ephemeral=True)
+            await interaction.response.send_message("Tu dois être dans TON salon vocal !", ephemeral=True)
+
+    @discord.ui.button(label="Limiter les places", emoji="👥", style=discord.ButtonStyle.secondary, custom_id="voc_limit")
+    async def limit(self, interaction, button):
+        if interaction.user.voice and interaction.user.voice.channel.id in temp_vocal_channels:
+            
+            modal = discord.ui.Modal(title="Limite de places")
+            limit_input = discord.ui.TextInput(label="Nombre (0 pour illimité)", placeholder="Entre un chiffre entre 0 et 99", min_length=1, max_length=2)
+            modal.add_item(limit_input)
+
+            async def on_limit_submit(int_modal):
+                try:
+                    val = int(limit_input.value)
+                    await interaction.user.voice.channel.edit(user_limit=val if val <= 99 else 99)
+                    await int_modal.response.defer()
+                except:
+                    await int_modal.response.send_message("Mets un chiffre valide !", ephemeral=True)
+
+            modal.on_submit = on_limit_submit
+            await interaction.response.send_modal(modal)
+        else:
+            await interaction.response.send_message("Tu dois être dans TON salon vocal !", ephemeral=True)
             
 class CoopView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
