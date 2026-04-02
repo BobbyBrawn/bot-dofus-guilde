@@ -119,7 +119,40 @@ class MissionView(discord.ui.View):
         else:
             # Si le fil a été supprimé entre temps
             await interaction.response.send_message("❌ Cette mission n'existe plus ou a été terminée.", ephemeral=True)
+            
+class FinishView(discord.ui.View):
+    def __init__(self, thread_id, announcement_id, list_chan_id, creator_id):
+        super().__init__(timeout=None)
+        self.thread_id = thread_id
+        self.announcement_id = announcement_id
+        self.list_chan_id = list_chan_id
+        self.creator_id = creator_id
 
+    @discord.ui.button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id="finish_mission_btn")
+    async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id == self.creator_id:
+            list_chan = bot.get_channel(self.list_chan_id)
+            thread = bot.get_channel(self.thread_id)
+            
+            # 1. Suppression de l'annonce
+            try:
+                msg = await list_chan.fetch_message(self.announcement_id)
+                await msg.delete()
+            except: pass
+            
+            # 2. Nettoyage JSON
+            data = load_data()
+            if str(self.thread_id) in data["active_missions"]:
+                del data["active_missions"][str(self.thread_id)]
+            save_data(data)
+            
+            # 3. Suppression du fil
+            await interaction.response.send_message("✅ Mission close, suppression...")
+            await asyncio.sleep(1)
+            await thread.delete()
+        else:
+            await interaction.response.send_message("❌ Seul le demandeur peut clore la mission.", ephemeral=True)
+            
 class GoalModal(discord.ui.Modal):
     def __init__(self, category, placeholder):
         super().__init__(title=f"Demande : {category}")
@@ -152,40 +185,12 @@ class GoalModal(discord.ui.Modal):
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
 
-        # 6. Création du bouton rouge "Mission terminée !"
-        view_f = discord.ui.View(timeout=None)
-        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger)
-
-        # La fonction de suppression liée au bouton
-        async def fini_cb(i_end):
-            # Seul le demandeur peut cliquer
-            if i_end.user.id == interaction.user.id:
-                current_data = load_data()
-                # On récupère l'ID du message d'annonce grâce à l'ID du fil
-                msg_id = current_data["active_missions"].get(str(thread.id))
-                
-                if msg_id:
-                    try:
-                        # On supprime l'annonce dans #liste-demande-aide
-                        m_del = await list_chan.fetch_message(msg_id)
-                        await m_del.delete()
-                    except: pass
-                    # On nettoie le JSON
-                    del current_data["active_missions"][str(thread.id)]
-                
-                save_data(current_data)
-                await i_end.response.send_message("✅ Mission terminée, fermeture du canal...")
-                await asyncio.sleep(1)
-                await thread.delete()
-            else:
-                await i_end.response.send_message("❌ Seul le demandeur peut clore cette mission.", ephemeral=True)
-
-        btn_f.callback = fini_cb
-        view_f.add_item(btn_f)
+        # 6. ENVOI DU BOUTON (Via la nouvelle classe FinishView)
+        # On lui donne toutes les infos pour qu'il sache quoi supprimer plus tard
+        view_f = FinishView(thread.id, announcement.id, list_chan.id, interaction.user.id)
         
-        # 7. ENVOI FINAL : Le bouton arrive dans le fil une fois que tout est mappé
         await thread.send(
-            content=f"⚔️ {interaction.user.mention}, ton canal d'entraide est prêt.\n\nClique sur le bouton ci-dessous quand la mission est finie pour tout supprimer :",
+            content=f"⚔️ {interaction.user.mention}, ton canal d'entraide est prêt.\n\nClique sur le bouton ci-dessous quand la mission est finie :",
             view=view_f
         )
 
