@@ -243,32 +243,41 @@ class CoopView(discord.ui.View):
 @bot.command()
 async def update(ctx, module=None):
     if not ctx.author.guild_permissions.administrator: return
-    if module == "voc":
-        c = bot.get_channel(ID_SALON_CONFIG)
-        if c: 
-            await c.purge(limit=10)
-            await c.send("🎙️ **Gestion vocale**", view=VocalView())
-    elif module == "sav":
-        c = bot.get_channel(ID_SALON_SAV)
-        if c:
-            await c.purge(limit=5)
-            await c.send("👋 **Besoin d'aide ?**", view=SAVView())
-    elif module == "aide":
-        c = bot.get_channel(ID_SALON_DEMANDE_AIDE)
-        if c:
-            await c.purge(limit=5)
-            await c.send("🤝 **Entraide de Guilde**", view=CoopView())
-    elif module == "notif":
-        c = bot.get_channel(ID_SALON_NOTIFICATIONS)
-        if c:
-            await c.purge(limit=10)
-            msg = await c.send("🔔 **Notifications**\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
-            for e in ["📅", "⚔️", "📢"]: await msg.add_reaction(e)
-            data = load_data()
-            data["notif_msg_id"] = msg.id
-            save_data(data)
-    await ctx.send(f"✅ Module {module} mis à jour.")
 
+    # Si module est None ou "all", on fait tout. Sinon, juste le module demandé.
+    to_update = ["voc", "sav", "aide", "notif"] if module in [None, "all"] else [module]
+
+    for m in to_update:
+        if m == "voc":
+            c = bot.get_channel(ID_SALON_CONFIG)
+            if c: 
+                await c.purge(limit=10)
+                await c.send("🎙️ **Gestion de ton salon vocal**\nUtilise les boutons ci-dessous.", view=VocalView())
+        
+        elif m == "sav":
+            c = bot.get_channel(ID_SALON_SAV)
+            if c:
+                await c.purge(limit=5)
+                await c.send("👋 **Besoin d'aide ?**\nOuvre un ticket ici.", view=SAVView())
+        
+        elif m == "aide":
+            c = bot.get_channel(ID_SALON_DEMANDE_AIDE)
+            if c:
+                await c.purge(limit=5)
+                await c.send("🤝 **Entraide de Guilde**\nClique sur un bouton pour demander de l'aide !", view=CoopView())
+        
+        elif m == "notif":
+            c = bot.get_channel(ID_SALON_NOTIFICATIONS)
+            if c:
+                await c.purge(limit=10)
+                msg = await c.send("🔔 **Notifications**\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
+                for emoji in ["📅", "⚔️", "📢"]: await msg.add_reaction(emoji)
+                data = load_data()
+                data["notif_msg_id"] = msg.id
+                save_data(data)
+
+    await ctx.send(f"✅ Mise à jour terminée pour : {', '.join(to_update)}")
+    
 @bot.event
 async def on_ready():
     print(f"🛡️ Watcher v7.2 opérationnel")
