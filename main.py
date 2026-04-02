@@ -37,40 +37,34 @@ def save_data(data):
     with open("data.json", "w") as f: json.dump(data, f, indent=4)
 
 # --- ALMANAX ---
-async def get_almanax_embed():
+async def get_almanax_embed(date_str=None):
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # On utilise l'URL de ton bot qui semble viser la date précise
+    url = f"https://api.dofusdu.de/dofus2/fr/almanax/{date_str}"
+    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    
     try:
-        url = "https://api.dofusdu.de/dofus2/fr/almanax/today"
-        headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-        
         response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200: return None
         
-        # Vérification si la réponse est bien du JSON
-        if "application/json" not in response.headers.get("Content-Type", ""):
-            print(f"❌ L'API n'a pas renvoyé de JSON (Vérifie l'URL ou la maintenance).")
-            return None
-
         data = response.json()
-        item = data[0] if isinstance(data, list) and len(data) > 0 else data
-        
-        if not item or not isinstance(item, dict): return None
-
-        meryde_name = item.get("meryde", {}).get("name", "Inconnu")
-        bonus_desc = item.get("bonus", {}).get("description", "Pas de bonus")
-        offrande_name = item.get("offering", {}).get("name", "Pas d'offrande")
-        image_url = item.get("meryde", {}).get("image_url", "")
+        # On adapte l'extraction selon ce que renvoie cette URL précise
+        meryde = data.get("meryde", {}).get("name", "Inconnu")
+        bonus = data.get("bonus", {}).get("description", "Pas de bonus")
+        offrande = data.get("offering", {}).get("name", "Pas d'offrande")
+        quantite = data.get("offering", {}).get("quantity", "1")
 
         embed = discord.Embed(
-            title=f"📅 ALMANAX : {meryde_name.upper()}",
-            description=f"✨ **Bonus**\n{bonus_desc}\n\n🙏 **Offrande**\n{offrande_name}",
-            color=0xF1C40F,
-            timestamp=datetime.now()
+            title=f"📅 ALMANAX : {meryde.upper()}",
+            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{quantite}x {offrande}",
+            color=0xF1C40F
         )
-        if image_url: embed.set_thumbnail(url=image_url)
         return embed
-
-    except Exception as e:
-        print(f"❌ Erreur Script : {e}")
+    except:
         return None
+        
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
 async def almanax_loop():
     channel = bot.get_channel(ID_SALON_ALMANAX)
