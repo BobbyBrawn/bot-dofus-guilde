@@ -72,8 +72,7 @@ async def on_voice_state_update(member, before, after):
 @bot.event
 async def on_raw_reaction_add(payload):
     data = load_data()
-    if payload.message_id != data.get("notif_msg_id"): return
-    if payload.user_id == bot.user.id: return
+    if payload.message_id != data.get("notif_msg_id") or payload.user_id == bot.user.id: return
     guild = bot.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
     role_id = { "📅": ROLE_ALMANAX, "⚔️": ROLE_ENTRAIDE, "📢": ROLE_ANNONCES }.get(str(payload.emoji))
@@ -93,13 +92,13 @@ class MissionView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
         self.thread_id = thread_id
-    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_mission_v6")
+    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_mission_v63")
     async def join(self, interaction, button):
         thread = bot.get_channel(self.thread_id)
         if thread:
             await thread.add_user(interaction.user)
             await thread.send(f"⚔️ {interaction.user.mention} rejoint l'escouade !")
-            await interaction.response.send_message("Ajouté au fil !", ephemeral=True)
+        await interaction.response.defer()
 
 class GoalModal(discord.ui.Modal):
     def __init__(self, category, placeholder):
@@ -112,42 +111,37 @@ class GoalModal(discord.ui.Modal):
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # 1. Envoi du texte SEUL (Pas de bouton ici pour éviter qu'il soit copié dans le thread)
-        msg = await list_chan.send(f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}")
+        # 1. Création du fil INDÉPENDANT (pour éviter la copie du message d'origine)
+        thread = await list_chan.create_thread(name=f"Mission-{interaction.user.display_name}", type=discord.ChannelType.public_thread)
         
-        # 2. Création du fil
-        thread = await msg.create_thread(name=f"Mission-{interaction.user.display_name}", auto_archive_duration=60)
+        # 2. Envoi du message d'annonce avec le bouton
+        await list_chan.send(
+            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
+            view=MissionView(thread.id)
+        )
         
-        # 3. Mise à jour du message d'origine AVEC le bouton (Après création du fil)
-        await msg.edit(view=MissionView(thread.id))
-        
-        # 4. Bouton de fin dans le fil
+        # 3. Bouton de fin dans le fil
         view_f = discord.ui.View(timeout=None)
         btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger)
         async def fini_cb(i):
-            if i.user.id != interaction.user.id:
-                return await i.response.send_message("Seul le demandeur peut clore.", ephemeral=True)
-            data = load_data()
-            data["points"][str(i.user.id)] = data["points"].get(str(i.user.id), 0) + 1
-            save_data(data)
-            await i.response.send_message("Mission validée !", ephemeral=True)
-            await msg.delete()
-            await thread.delete()
+            if i.user.id == interaction.user.id:
+                data = load_data()
+                data["points"][str(i.user.id)] = data["points"].get(str(i.user.id), 0) + 1
+                save_data(data)
+                await thread.delete()
         btn_f.callback = fini_cb
         view_f.add_item(btn_f)
-        await thread.send(f"🛡️ Mission lancée ! {interaction.user.mention}, clique ici quand c'est fini :", view=view_f)
-        
-        # Plus de "interaction.response.send_message" ici pour supprimer la confirmation inutile
-        await interaction.response.defer() 
+        await thread.send(f"🛡️ {interaction.user.mention}, clique ici quand c'est fini :", view=view_f)
+        await interaction.response.defer()
 
-# --- INTERFACES PERSISTANTES ---
+# --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v6")
+    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v63")
     async def cb(self, i, b):
         t = await i.channel.create_thread(name=f"SAV-{i.user.display_name}", type=discord.ChannelType.private_thread)
         await t.send(f"🛡️ <@{MY_USER_ID}>, ticket de {i.user.mention}.")
-        await i.response.send_message(f"Fil ouvert : {t.mention}", ephemeral=True)
+        await i.response.defer()
 
 class CoopView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
@@ -176,7 +170,7 @@ async def update(ctx):
 
 @bot.event
 async def on_ready():
-    print(f"🛡️ Watcher v6.2 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
+    print(f"🛡️ Watcher v6.3 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
     if not almanax_loop.is_running(): almanax_loop.start()
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
