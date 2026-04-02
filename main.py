@@ -125,35 +125,32 @@ class GoalModal(discord.ui.Modal):
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # 1. Création du fil INDÉPENDANT (pour qu'il soit bien vide)
-        thread = await list_chan.create_thread(name=f"Mission-{interaction.user.display_name}", type=discord.ChannelType.public_thread)
-        
-        # 2. Suppression du message système moche dans le salon liste
-        await asyncio.sleep(1)
-        async for message in list_chan.history(limit=5):
-            if message.type == discord.MessageType.thread_created:
-                await message.delete()
-                break
-
-        # 3. Envoi de l'annonce avec le bouton "Dispo"
+        # 1. Envoi de l'annonce (Le message parent)
         announcement = await list_chan.send(
-            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
-            view=MissionView(thread.id)
+            content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}"
+        )
+
+        # 2. Création du fil directement attaché au message
+        thread = await announcement.create_thread(
+            name=f"Mission-{interaction.user.display_name}",
+            auto_archive_duration=60
         )
         
-        # On enregistre le lien entre le fil et l'annonce pour le nettoyage final
+        # 3. On ajoute le bouton "Dispo" à l'annonce
+        await announcement.edit(view=MissionView(thread.id))
+
+        # 4. Enregistrement en mémoire
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
         
-        # 4. Préparation du bouton de fin DANS LE FIL
+        # 5. Bouton de fin dans le fil
         view_f = discord.ui.View(timeout=None)
         btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id=f"end_{thread.id}")
         
         async def fini_cb(i_end):
             if i_end.user.id == interaction.user.id:
                 data_now = load_data()
-                # On récupère l'annonce pour la raser
                 msg_id = data_now["active_missions"].get(str(thread.id))
                 if msg_id:
                     try:
@@ -167,7 +164,9 @@ class GoalModal(discord.ui.Modal):
         btn_f.callback = fini_cb
         view_f.add_item(btn_f)
         await thread.send(f"🛡️ {interaction.user.mention}, clique ici quand c'est fini :", view=view_f)
-        await interaction.response.defer()
+        
+        # 6. Réponse à l'utilisateur (Crucial pour éviter l'erreur "Une erreur s'est produite")
+        await interaction.response.send_message(f"✅ Ta demande a été postée dans <#{ID_SALON_LISTE_DEMANDES}> !", ephemeral=True)
 
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
