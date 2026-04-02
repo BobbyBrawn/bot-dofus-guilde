@@ -41,7 +41,7 @@ async def get_almanax_embed(date_str=None):
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
     
-    url = f"https://api.dofusdu.de/dofus2/fr/almanax/{date_str}"
+    url = f"https://api.dofusdu.de/dofus2/fr/almanax"
     headers = {"Accept": "application/json", "User-Agent": "WatcherBot/1.0"}
     
     try:
