@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import os
 import json
 import requests
+from bs4 import BeautifulSoup
 import asyncio
 from datetime import datetime, time, timedelta, timezone
 
@@ -38,59 +39,70 @@ def save_data(data):
 
 # --- ALMANAX ---
 async def get_almanax_embed(date_str=None):
-    if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d")
-    
-    url = f"https://api.dofusdu.de/dofus2/fr/almanax"
-    headers = {"Accept": "application/json", "User-Agent": "WatcherBot/1.0"}
+    # On cible le site officiel (Source la plus fiable)
+    url = "https://www.krosmoz.com/fr/almanax"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200: 
+        if response.status_code != 200:
+            print(f"❌ Erreur accès Krosmoz : {response.status_code}")
             return None
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        raw_data = response.json()
+        # --- EXTRACTION DES DONNÉES (Format Krosmoz) ---
+        # Le nom du Méryde
+        meryde_elem = soup.find("span", class_="title")
+        meryde = meryde_elem.text.strip() if meryde_elem else "Inconnu"
         
-        # Vérification si la liste est vide avant d'extraire
-        if isinstance(raw_data, list):
-            if len(raw_data) == 0:
-                print("❌ L'API a renvoyé une liste vide.")
-                return None
-            data = raw_data[0]
-        else:
-            data = raw_data
+        # Le bonus (situé dans la partie centrale)
+        bonus_div = soup.find("div", id="almanax_event_desc")
+        bonus = bonus_div.text.strip() if bonus_div else "Pas de bonus trouvé"
         
-        meryde = data.get("meryde", {}).get("name", "Inconnu")
-        bonus = data.get("bonus", {}).get("description", "Pas de bonus")
+        # L'offrande (située dans la barre latérale ou sous l'image)
+        # Sur Krosmoz, l'offrande est souvent dans une div 'more' ou 'more-infos'
+        offering_div = soup.find("div", class_="more")
+        offrande = "Non trouvée"
+        if offering_div:
+            # On nettoie le texte pour ne garder que l'essentiel
+            offrande = offering_div.text.replace("Récupérer", "").replace("Ramener", "").strip()
         
-        offering_info = data.get("offering", {})
-        offrande_nom = offering_info.get("item", {}).get("name", "Pas d'offrande")
-        offrande_qty = offering_info.get("amount", "1")
+        # L'image du Méryde
+        img_div = soup.find("div", class_="illu")
+        meryde_img = img_div.find("img")["src"] if img_div and img_div.find("img") else None
 
+        # --- CRÉATION DE L'EMBED ---
         embed = discord.Embed(
             title=f"📅 ALMANAX : {meryde.upper()}",
-            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{offrande_qty}x {offrande_nom}",
+            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{offrande}",
             color=0xF1C40F,
             timestamp=datetime.now()
         )
         
-        meryde_img = data.get("meryde", {}).get("image_url")
         if meryde_img:
             embed.set_thumbnail(url=meryde_img)
             
         return embed
+
     except Exception as e:
-        print(f"❌ Erreur Script : {e}")
+        print(f"❌ Erreur Scraping Krosmoz : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
 async def almanax_loop():
     channel = bot.get_channel(ID_SALON_ALMANAX)
-    if not channel: return
+    if not channel: 
+        print("❌ Salon Almanax introuvable.")
+        return
 
     embed = await get_almanax_embed()
     if embed:
         await channel.send(content=f"<@&{ROLE_ALMANAX}>", embed=embed)
+    else:
+        print("❌ Impossible de générer l'embed Almanax.")
 
 # --- VOCAUX ---
 temp_vocal_channels = []
