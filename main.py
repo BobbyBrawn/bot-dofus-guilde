@@ -170,7 +170,21 @@ class SAVView(discord.ui.View):
         t = await i.channel.create_thread(name=f"SAV-{i.user.display_name}", type=discord.ChannelType.private_thread)
         await t.send(f"Coucou {i.user.mention}, explique moi ton problème ici, met un max d'infos, des screens si possible, et <@{MY_USER_ID}> se penchera dessus au plus vite !")
         await i.response.defer()
+        
+class VocalView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
+    @discord.ui.button(label="Nommer le salon", style=discord.ButtonStyle.primary, custom_id="voc_name")
+    async def rename(self, interaction, button):
+        # Ici on vérifie si l'utilisateur est dans son propre salon temp
+        if interaction.user.voice and interaction.user.voice.channel.id in temp_vocal_channels:
+             # Je te donnerai le code du Modal si tu veux aller plus loin, 
+             # mais déjà, avec la vue enregistrée, l'erreur "Echec" disparaîtra.
+             await interaction.response.send_message("Fonction bientôt active", ephemeral=True)
+        else:
+             await interaction.response.send_message("Tu dois être dans ton salon vocal !", ephemeral=True)
+            
 class CoopView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="c_s")
@@ -208,6 +222,7 @@ async def on_ready():
     print(f"🛡️ Watcher v7.2 opérationnel")
     bot.add_view(SAVView())
     bot.add_view(CoopView())
+    bot.add_view(VocalView())
     if not almanax_loop.is_running(): almanax_loop.start()
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
