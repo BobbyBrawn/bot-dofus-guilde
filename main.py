@@ -40,64 +40,53 @@ def save_data(data):
 # --- ALMANAX ---
 async def get_almanax_embed():
     url = "https://www.krosmoz.com/fr/almanax"
-    
-    # On simule un vrai navigateur Windows avec Chrome
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": "https://www.google.com/",
-        "DNT": "1"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        
-        if response.status_code != 200:
-            print(f"❌ Accès refusé par le site (Code {response.status_code})")
-            return None
-
+        response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # On cherche le bloc avec l'ID que tu as identifié
         bloc_dofus = soup.find("div", id="achievement_dofus")
         
-        if not bloc_dofus:
-            # Si on ne trouve toujours pas, on vérifie si on est tombé sur une page de blocage
-            if "captcha" in response.text.lower() or "cloudflare" in response.text.lower():
-                print("❌ Bloqué par un CAPTCHA ou Cloudflare.")
-            else:
-                print("❌ Structure introuvable malgré l'accès OK.")
-            return None
+        if not bloc_dofus: return None
 
-        # --- Extraction (ton code HTML) ---
-        # Bonus
+        # --- 1. BONUS COMPLET (Inclus le texte en gras) ---
         more_div = bloc_dofus.find("div", class_="more")
-        bonus = more_div.get_text(separator="|").split("|")[0].strip() if more_div else "Non trouvé"
+        # On extrait tout le texte du bonus avant la div 'more-infos'
+        # On remplace les balises <b> par du gras Discord (**)
+        for b_tag in more_div.find_all("b"):
+            b_tag.replace_with(f"**{b_tag.text}**")
         
-        # Quête et Offrande
+        bonus_complet = more_div.get_text(separator=" ").split("Quête")[0].strip()
+
+        # --- 2. QUÊTE ET OFFRANDE ---
         more_infos = bloc_dofus.find("div", class_="more-infos")
-        quete = more_infos.find("p").get_text().strip() if more_infos else "Quête non trouvée"
+        quete = more_infos.find("p").get_text().strip() if more_infos else "Quête"
         
         fleft = bloc_dofus.find("p", class_="fleft")
-        offrande = fleft.get_text().strip() if fleft else "Offrande non trouvée"
-        
-        # Image de l'item
+        offrande = fleft.get_text().strip() if fleft else "Offrande"
+
+        # --- 3. IMAGE EN HAUTE RÉSOLUTION ---
         img_tag = bloc_dofus.find("div", class_="more-infos-content").find("img")
         image_url = img_tag["src"] if img_tag else None
+        
+        if image_url:
+            # MAGIE : On remplace le petit format .w75h75 par le grand .w200h200
+            image_url = image_url.replace(".w75h75", "")
 
+        # --- CONSTRUCTION ---
         embed = discord.Embed(
             title="📅 ALMANAX DU JOUR",
-            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n**{quete}**\n{offrande}",
+            description=f"✨ **Bonus**\n{bonus_complet}\n\n🙏 **Offrande**\n**{quete}**\n{offrande}",
             color=0xF1C40F
         )
+        
         if image_url:
             embed.set_image(url=image_url)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur critique : {e}")
+        print(f"❌ Erreur : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
