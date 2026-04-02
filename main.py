@@ -41,30 +41,42 @@ async def get_almanax_embed(date_str=None):
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
     
-    # On utilise l'URL de ton bot qui semble viser la date précise
     url = f"https://api.dofusdu.de/dofus2/fr/almanax/{date_str}"
-    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    headers = {"Accept": "application/json", "User-Agent": "WatcherBot/1.0"}
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200: return None
+        if response.status_code != 200: 
+            print(f"❌ Erreur API : {response.status_code}")
+            return None
         
         data = response.json()
-        # On adapte l'extraction selon ce que renvoie cette URL précise
+        
+        # Extraction précise des champs de l'API
         meryde = data.get("meryde", {}).get("name", "Inconnu")
         bonus = data.get("bonus", {}).get("description", "Pas de bonus")
-        offrande = data.get("offering", {}).get("name", "Pas d'offrande")
-        quantite = data.get("offering", {}).get("quantity", "1")
+        
+        offering_info = data.get("offering", {})
+        # L'API utilise 'item' pour le nom et 'amount' pour la quantité
+        offrande_nom = offering_info.get("item", {}).get("name", "Pas d'offrande")
+        offrande_qty = offering_info.get("amount", "1")
 
         embed = discord.Embed(
             title=f"📅 ALMANAX : {meryde.upper()}",
-            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{quantite}x {offrande}",
-            color=0xF1C40F
+            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{offrande_qty}x {offrande_nom}",
+            color=0xF1C40F,
+            timestamp=datetime.now()
         )
-        return embed
-    except:
-        return None
         
+        meryde_img = data.get("meryde", {}).get("image_url")
+        if meryde_img:
+            embed.set_thumbnail(url=meryde_img)
+            
+        return embed
+    except Exception as e:
+        print(f"❌ Erreur Script : {e}")
+        return None
+
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
 async def almanax_loop():
     channel = bot.get_channel(ID_SALON_ALMANAX)
@@ -72,7 +84,6 @@ async def almanax_loop():
 
     embed = await get_almanax_embed()
     if embed:
-        # On mentionne le rôle pour ceux qui veulent la notif
         await channel.send(content=f"<@&{ROLE_ALMANAX}>", embed=embed)
 
 # --- VOCAUX ---
