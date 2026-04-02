@@ -46,27 +46,42 @@ async def get_almanax_embed():
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # On cible l'ID exact que tu as copié
+        # On essaie de trouver le bloc par son ID (ton copier-coller)
         bloc_dofus = soup.find("div", id="achievement_dofus")
         
-        # Extraction du Bonus (situé dans la div 'more')
-        bonus = bloc_dofus.find("div", class_="more").get_text(separator=" ").split("Quête")[0].strip()
+        # Si l'ID ne marche pas, on cherche par la classe 'achievement'
+        if not bloc_dofus:
+            bloc_dofus = soup.find("div", class_="achievement")
+
+        # Si on ne trouve toujours rien, on arrête proprement
+        if not bloc_dofus:
+            print("❌ Impossible de trouver le bloc Almanax sur la page.")
+            return None
         
-        # Extraction de la Quête (située dans le premier <p> de 'more-infos')
-        quete = bloc_dofus.find("div", class_="more-infos").find("p").get_text().strip()
+        # Extraction sécurisée des éléments
+        # Bonus
+        more_div = bloc_dofus.find("div", class_="more")
+        bonus = more_div.get_text(separator="|").split("|")[0].strip() if more_div else "Non trouvé"
         
-        # Extraction de l'item et quantité (situé dans 'fleft')
-        offrande = bloc_dofus.find("p", class_="fleft").get_text().strip()
+        # Quête
+        more_infos = bloc_dofus.find("div", class_="more-infos")
+        quete = more_infos.find("p").get_text().strip() if more_infos and more_infos.find("p") else "Quête non trouvée"
         
-        # Extraction de l'image (dans 'more-infos-content')
-        image_url = bloc_dofus.find("div", class_="more-infos-content").find("img")["src"]
+        # Offrande (dans fleft)
+        fleft = bloc_dofus.find("p", class_="fleft")
+        offrande = fleft.get_text().strip() if fleft else "Offrande non trouvée"
+        
+        # Image
+        content = bloc_dofus.find("div", class_="more-infos-content")
+        image_url = content.find("img")["src"] if content and content.find("img") else None
 
         embed = discord.Embed(
             title="📅 ALMANAX DU JOUR",
             description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n**{quete}**\n{offrande}",
             color=0xF1C40F
         )
-        embed.set_image(url=image_url)
+        if image_url:
+            embed.set_image(url=image_url)
             
         return embed
 
