@@ -46,56 +46,32 @@ async def get_almanax_embed():
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. On cible le bloc spécifique que tu m'as donné
-        main_div = soup.find("div", id="achievement_dofus")
-        if not main_div:
-            return None
-
-        # 2. Extraction du Bonus (Le texte après "Bonus :")
-        # On cherche le texte dans la div 'more' en ignorant les sous-divs
-        more_div = main_div.find("div", class_="more")
-        bonus_complet = more_div.get_text(separator="|").split("|")[0].strip()
-
-        # 3. Extraction de la Quête
-        quete_p = main_div.find("div", class_="more-infos").find("p")
-        quete_nom = quete_p.get_text().strip() if quete_p else "Quête inconnue"
-
-        # 4. Extraction de l'Item et Quantité
-        item_p = main_div.find("p", class_="fleft")
-        # On nettoie le texte pour virer "Récupérer" et "et rapporter..."
-        offrande_texte = item_p.get_text().strip() if item_p else "Offrande inconnue"
+        # On cible l'ID exact que tu as copié
+        bloc_dofus = soup.find("div", id="achievement_dofus")
         
-        # 5. L'IMAGE de l'item (L'abreuvoir)
-        item_img = main_div.find("div", class_="more-infos-content").find("img")["src"]
+        # Extraction du Bonus (situé dans la div 'more')
+        bonus = bloc_dofus.find("div", class_="more").get_text(separator=" ").split("Quête")[0].strip()
+        
+        # Extraction de la Quête (située dans le premier <p> de 'more-infos')
+        quete = bloc_dofus.find("div", class_="more-infos").find("p").get_text().strip()
+        
+        # Extraction de l'item et quantité (situé dans 'fleft')
+        offrande = bloc_dofus.find("p", class_="fleft").get_text().strip()
+        
+        # Extraction de l'image (dans 'more-infos-content')
+        image_url = bloc_dofus.find("div", class_="more-infos-content").find("img")["src"]
 
-        # --- MISE EN PAGE ---
         embed = discord.Embed(
             title="📅 ALMANAX DU JOUR",
-            color=0xF1C40F,
-            timestamp=datetime.now()
+            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n**{quete}**\n{offrande}",
+            color=0xF1C40F
         )
-        
-        # On sépare bien Bonus et Offrande
-        embed.add_field(
-            name="✨ Bonus", 
-            value=f"{bonus_complet}\n\u200b", # \u200b ajoute un espace invisible pour aérer
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🙏 Offrande", 
-            value=f"**{quete_nom}**\n{offrande_texte}", 
-            inline=False
-        )
-
-        # On met l'image de l'item en grand
-        if item_img:
-            embed.set_image(url=item_img)
+        embed.set_image(url=image_url)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur Scraping Précis : {e}")
+        print(f"❌ Erreur Scraping : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
