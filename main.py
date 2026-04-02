@@ -29,7 +29,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- MÉMOIRE ---
 def load_data():
     if not os.path.exists("data.json"):
-        with open("data.json", "w") as f: json.dump({"points": {}, "notif_msg_id": 0}, f)
+        with open("data.json", "w") as f: json.dump({"points": {}, "notif_msg_id": 0, "active_missions": {}}, f)
     with open("data.json", "r") as f: return json.load(f)
 
 def save_data(data):
@@ -59,7 +59,7 @@ class MissionView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
         self.thread_id = thread_id
-    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v65")
+    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v67")
     async def join(self, interaction, button):
         thread = bot.get_channel(self.thread_id)
         if thread:
@@ -81,18 +81,23 @@ class GoalModal(discord.ui.Modal):
         # 1. Création du fil
         thread = await list_chan.create_thread(name=f"Mission-{interaction.user.display_name}", type=discord.ChannelType.public_thread)
         
-        # 2. Suppression immédiate du message système "X a ouvert un fil" dans le salon liste
-        await asyncio.sleep(1) # Petit délai pour laisser Discord générer le message
+        # 2. Suppression du message système
+        await asyncio.sleep(1)
         async for message in list_chan.history(limit=5):
             if message.type == discord.MessageType.thread_created:
                 await message.delete()
                 break
 
-        # 3. Envoi de l'annonce propre
-        await list_chan.send(
+        # 3. Envoi de l'annonce et stockage de son ID
+        announcement = await list_chan.send(
             content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
+        
+        data = load_data()
+        if "active_missions" not in data: data["active_missions"] = {}
+        data["active_missions"][str(thread.id)] = announcement.id
+        save_data(data)
         
         # 4. Bouton de fin dans le fil
         view_f = discord.ui.View(timeout=None)
@@ -100,9 +105,21 @@ class GoalModal(discord.ui.Modal):
         async def fini_cb(i):
             if i.user.id == interaction.user.id:
                 data = load_data()
+                # Crédit des points
                 data["points"][str(i.user.id)] = data["points"].get(str(i.user.id), 0) + 1
+                
+                # Suppression du message d'annonce dans la liste
+                msg_id = data["active_missions"].get(str(thread.id))
+                if msg_id:
+                    try:
+                        msg_to_del = await list_chan.fetch_message(msg_id)
+                        await msg_to_del.delete()
+                    except: pass
+                    del data["active_missions"][str(thread.id)]
+                
                 save_data(data)
                 await thread.delete()
+        
         btn_f.callback = fini_cb
         view_f.add_item(btn_f)
         await thread.send(f"🛡️ {interaction.user.mention}, clique ici quand c'est fini :", view=view_f)
@@ -111,10 +128,10 @@ class GoalModal(discord.ui.Modal):
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v65")
+    @discord.ui.button(label="Ouvrir un ticket", style=discord.ButtonStyle.danger, custom_id="sav_v67")
     async def cb(self, i, b):
         t = await i.channel.create_thread(name=f"SAV-{i.user.display_name}", type=discord.ChannelType.private_thread)
-        await t.send(f"🛡️ <@{MY_USER_ID}>, ticket de {i.user.mention}.")
+        await t.send(f"Coucou {i.user.mention}, explique moi ton problème ici, met un max d'infos, des screens si possible, et <@{MY_USER_ID}> se penchera dessus au plus vite !")
         await i.response.defer()
 
 class CoopView(discord.ui.View):
@@ -144,6 +161,6 @@ async def update(ctx):
 
 @bot.event
 async def on_ready():
-    print(f"🛡️ Watcher v6.5 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
+    print(f"🛡️ Watcher v6.7 opérationnel"); bot.add_view(SAVView()); bot.add_view(CoopView())
 
 bot.run(os.environ.get('DISCORD_TOKEN'))
