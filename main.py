@@ -38,57 +38,60 @@ def save_data(data):
     with open("data.json", "w") as f: json.dump(data, f, indent=4)
 
 # --- ALMANAX ---
-async def get_almanax_embed(date_str=None):
-    # On cible le site officiel (Source la plus fiable)
+async def get_almanax_embed():
     url = "https://www.krosmoz.com/fr/almanax"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            print(f"❌ Erreur accès Krosmoz : {response.status_code}")
-            return None
-            
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # --- EXTRACTION DES DONNÉES (Format Krosmoz) ---
-        # Le nom du Méryde
-        meryde_elem = soup.find("span", class_="title")
-        meryde = meryde_elem.text.strip() if meryde_elem else "Inconnu"
+        # 1. Méryde
+        meryde = soup.find("span", class_="title").text.strip()
         
-        # Le bonus (situé dans la partie centrale)
+        # 2. Bonus (on nettoie les espaces en trop)
         bonus_div = soup.find("div", id="almanax_event_desc")
         bonus = bonus_div.text.strip() if bonus_div else "Pas de bonus trouvé"
         
-        # L'offrande (située dans la barre latérale ou sous l'image)
-        # Sur Krosmoz, l'offrande est souvent dans une div 'more' ou 'more-infos'
-        offering_div = soup.find("div", class_="more")
-        offrande = "Non trouvée"
-        if offering_div:
-            # On nettoie le texte pour ne garder que l'essentiel
-            offrande = offering_div.text.replace("Récupérer", "").replace("Ramener", "").strip()
+        # 3. Offrande & Quête
+        # On cherche le bloc qui contient l'image de l'item et le texte
+        more_div = soup.find("div", class_="more")
+        offrande_brute = "Non trouvée"
+        item_img_url = None
         
-        # L'image du Méryde
-        img_div = soup.find("div", class_="illu")
-        meryde_img = img_div.find("img")["src"] if img_div and img_div.find("img") else None
+        if more_div:
+            # On récupère l'image de l'item (l'offrande)
+            img_tag = more_div.find("img")
+            if img_tag:
+                item_img_url = img_tag["src"]
+            
+            # On nettoie le texte : on enlève "Récupérer", "Ramener", etc.
+            text_parts = more_div.get_text(separator="\n").split("\n")
+            # On filtre les lignes vides et les mots inutiles
+            clean_parts = [p.strip() for p in text_parts if p.strip() and "Récupérer" not in p]
+            offrande_brute = "\n".join(clean_parts)
 
-        # --- CRÉATION DE L'EMBED ---
+        # --- CONSTRUCTION DE L'EMBED ---
         embed = discord.Embed(
             title=f"📅 ALMANAX : {meryde.upper()}",
-            description=f"✨ **Bonus**\n{bonus}\n\n🙏 **Offrande**\n{offrande}",
+            description=f"✨ **Bonus**\n\n{bonus}\n\n🙏 **Offrande**\n\n{offrande_brute}",
             color=0xF1C40F,
             timestamp=datetime.now()
         )
         
-        if meryde_img:
-            embed.set_thumbnail(url=meryde_img)
+        # Image du Méryde en miniature (en haut à droite)
+        illu_div = soup.find("div", class_="illu")
+        if illu_div and illu_div.find("img"):
+            embed.set_thumbnail(url=illu_div.find("img")["src"])
+            
+        # Image de l'OFFRANDE en grande image (en bas) pour le côté "joli"
+        if item_img_url:
+            embed.set_image(url=item_img_url)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur Scraping Krosmoz : {e}")
+        print(f"❌ Erreur mise en forme : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
