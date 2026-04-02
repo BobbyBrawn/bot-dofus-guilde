@@ -39,27 +39,20 @@ def save_data(data):
 # --- ALMANAX ---
 async def get_almanax_embed():
     try:
-        # URL V3 (Standard 2026 pour Dofus Unity / 2.0)
-        url = "https://api.dofusdu.de/dofus2/fr/almanax"
+        url = "https://api.dofusdu.de/dofus2/fr/almanax/today"
         headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
         
-        # On essaie d'abord l'URL classique
         response = requests.get(url, headers=headers, timeout=10)
+        
+        # Vérification si la réponse est bien du JSON
+        if "application/json" not in response.headers.get("Content-Type", ""):
+            print(f"❌ L'API n'a pas renvoyé de JSON (Vérifie l'URL ou la maintenance).")
+            return None
+
         data = response.json()
-
-        # Si c'est une liste vide, on tente l'URL "v3" qui est le nouveau standard
-        if not data or (isinstance(data, list) and len(data) == 0):
-            url_v3 = "https://api.dofusdu.de/dofus2/fr/almanax/today"
-            response = requests.get(url_v3, headers=headers, timeout=10)
-            data = response.json()
-
-        # Extraction selon le format dictionnaire direct (standard V3)
-        # On ne force plus le [0] si c'est déjà un dictionnaire
         item = data[0] if isinstance(data, list) and len(data) > 0 else data
         
-        if not item or not isinstance(item, dict):
-            print("❌ Données Almanax vides ou mal formées.")
-            return None
+        if not item or not isinstance(item, dict): return None
 
         meryde_name = item.get("meryde", {}).get("name", "Inconnu")
         bonus_desc = item.get("bonus", {}).get("description", "Pas de bonus")
