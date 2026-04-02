@@ -101,12 +101,17 @@ class MissionView(discord.ui.View):
     def __init__(self, thread_id):
         super().__init__(timeout=None)
         self.thread_id = thread_id
-    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_v72")
+
+    @discord.ui.button(label="Je suis dispo pour aider !", style=discord.ButtonStyle.success, custom_id="join_mission_v73")
     async def join(self, interaction, button):
         thread = bot.get_channel(self.thread_id)
         if thread:
+            # On ajoute la personne au fil
             await thread.add_user(interaction.user)
+            # On envoie un petit message de confirmation DANS le fil
             await thread.send(f"⚔️ {interaction.user.mention} rejoint l'escouade !")
+        
+        # On valide l'interaction sans envoyer de message "Interaction réussie" inutile
         await interaction.response.defer()
 
 class GoalModal(discord.ui.Modal):
@@ -120,41 +125,43 @@ class GoalModal(discord.ui.Modal):
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
         
-        # 1. Fil créé d'abord pour un fil épuré
+        # 1. Création du fil INDÉPENDANT (pour qu'il soit bien vide)
         thread = await list_chan.create_thread(name=f"Mission-{interaction.user.display_name}", type=discord.ChannelType.public_thread)
         
+        # 2. Suppression du message système moche dans le salon liste
         await asyncio.sleep(1)
         async for message in list_chan.history(limit=5):
             if message.type == discord.MessageType.thread_created:
                 await message.delete()
                 break
 
-        # 2. Annonce avec bouton
+        # 3. Envoi de l'annonce avec le bouton "Dispo"
         announcement = await list_chan.send(
             content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
         
+        # On enregistre le lien entre le fil et l'annonce pour le nettoyage final
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
         
-        # 3. Bouton fin dans le fil
+        # 4. Préparation du bouton de fin DANS LE FIL
         view_f = discord.ui.View(timeout=None)
-        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger)
+        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id=f"end_{thread.id}")
         
-        async def fini_cb(i):
-            if i.user.id == interaction.user.id:
-                data = load_data()
-                data["points"][str(i.user.id)] = data["points"].get(str(i.user.id), 0) + 1
-                msg_id = data["active_missions"].get(str(thread.id))
+        async def fini_cb(i_end):
+            if i_end.user.id == interaction.user.id:
+                data_now = load_data()
+                # On récupère l'annonce pour la raser
+                msg_id = data_now["active_missions"].get(str(thread.id))
                 if msg_id:
                     try:
                         m_del = await list_chan.fetch_message(msg_id)
                         await m_del.delete()
                     except: pass
-                    del data["active_missions"][str(thread.id)]
-                save_data(data)
+                    del data_now["active_missions"][str(thread.id)]
+                save_data(data_now)
                 await thread.delete()
         
         btn_f.callback = fini_cb
@@ -217,35 +224,69 @@ class VocalView(discord.ui.View):
             await interaction.response.send_message("Tu dois être dans TON salon vocal !", ephemeral=True)
             
 class CoopView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="c_s")
-    async def s(self, i, b): await i.response.send_modal(GoalModal("Succès", "Ex: Koutoulou Hardi"))
-    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success, custom_id="c_q")
-    async def q(self, i, b): await i.response.send_modal(GoalModal("Quête", "Ex: Combat final Bolgrot"))
-    @discord.ui.button(label="Craft/FM", style=discord.ButtonStyle.primary, custom_id="c_c")
-    async def c(self, i, b): await i.response.send_modal(GoalModal("Craft/FM", "Ex: Craft Voile d'Encre / FM dague Erhy"))
-    @discord.ui.button(label="Farming", style=discord.ButtonStyle.secondary, custom_id="c_f")
-    async def f(self, i, b): await i.response.send_modal(GoalModal("Farming", "Ex: Donjon Korriandre en boucle"))
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Succès", emoji="🏆", style=discord.ButtonStyle.success, custom_id="c_s_v2")
+    async def s(self, i, b):
+        await i.response.send_modal(GoalModal("Succès", "Ex: Koutoulou Hardi, Vortex Focus"))
+
+    @discord.ui.button(label="Quête", emoji="📜", style=discord.ButtonStyle.success, custom_id="c_q_v2")
+    async def q(self, i, b):
+        await i.response.send_modal(GoalModal("Quête", "Ex: Les sept mercemers, Oiseau du temps"))
+
+    @discord.ui.button(label="Craft/FM", emoji="🛠️", style=discord.ButtonStyle.primary, custom_id="c_c_v2")
+    async def c(self, i, b):
+        await i.response.send_modal(GoalModal("Craft/FM", "Ex: Craft Voile d'Encre / FM Dagues Erhy"))
+
+    @discord.ui.button(label="Farming", emoji="🌾", style=discord.ButtonStyle.secondary, custom_id="c_f_v2")
+    async def f(self, i, b):
+        await i.response.send_modal(GoalModal("Farming", "Ex: Donjon Korriandre en boucle"))
 
 # --- COMMANDES ---
 @bot.command()
-async def update(ctx):
+async def update(ctx, module=None):
     if not ctx.author.guild_permissions.administrator: return
-    await bot.get_channel(ID_SALON_SAV).purge(limit=5)
-    await bot.get_channel(ID_SALON_SAV).send("👋 **Besoin d'aide ?**\nOuvre un ticket ici.", view=SAVView())
-    await bot.get_channel(ID_SALON_DEMANDE_AIDE).purge(limit=5)
-    await bot.get_channel(ID_SALON_DEMANDE_AIDE).send("🤝 **Entraide de Guilde**", view=CoopView())
-    notif_chan = bot.get_channel(ID_SALON_NOTIFICATIONS)
-    await notif_chan.purge(limit=10)
-    msg = await notif_chan.send("🔔 **Notifications**\nClique pour t'abonner :\n\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
-    for emoji in ["📅", "⚔️", "📢"]: await msg.add_reaction(emoji)
-    data = load_data(); data["notif_msg_id"] = msg.id; save_data(data)
-    # Nettoyage et envoi du module Vocal
-    vocal_chan = bot.get_channel(ID_SALON_CONFIG)
-    if vocal_chan:
-        await vocal_chan.purge(limit=10) # Supprime les anciens boutons
-        await vocal_chan.send("🎙️ **Gestion de ton salon vocal**\nUtilise les boutons ci-dessous pour personnaliser ton salon (tu dois être à l'intérieur).", view=VocalView())
-    await ctx.send("✅ Config rafraîchie (v7.2).")
+
+    # Si tu tapes "!update voc"
+    if module == "voc":
+        vocal_chan = bot.get_channel(ID_SALON_CONFIG)
+        if vocal_chan:
+            await vocal_chan.purge(limit=10)
+            await vocal_chan.send("🎙️ **Gestion de ton salon vocal**\nUtilise les boutons ci-dessous.", view=VocalView())
+            await ctx.send("✅ Module Vocal mis à jour.")
+
+    # Si tu tapes "!update sav"
+    elif module == "sav":
+        sav_chan = bot.get_channel(ID_SALON_SAV)
+        if sav_chan:
+            await sav_chan.purge(limit=5)
+            await sav_chan.send("👋 **Besoin d'aide ?**\nOuvre un ticket ici.", view=SAVView())
+            await ctx.send("✅ Module SAV mis à jour.")
+
+    # Si tu tapes "!update aide"
+    elif module == "aide":
+        aide_chan = bot.get_channel(ID_SALON_DEMANDE_AIDE)
+        if aide_chan:
+            await aide_chan.purge(limit=5)
+            await aide_chan.send("🤝 **Entraide de Guilde**\nClique sur un bouton pour demander de l'aide à la guilde !", view=CoopView())
+            await ctx.send("✅ Module Entraide (Formulaires) mis à jour.")
+    
+    # Si tu tapes "!update notif"
+    elif module == "notif":
+        notif_chan = bot.get_channel(ID_SALON_NOTIFICATIONS)
+        if notif_chan:
+            await notif_chan.purge(limit=10)
+            msg = await notif_chan.send("🔔 **Notifications**\n📅 : **Almanax**\n⚔️ : **Entraide**\n📢 : **Annonces**")
+            for emoji in ["📅", "⚔️", "📢"]: await msg.add_reaction(emoji)
+            data = load_data()
+            data["notif_msg_id"] = msg.id
+            save_data(data)
+            await ctx.send("✅ Module Notifications mis à jour.")
+
+    # Si tu tapes juste "!update" sans rien, il te demande quoi faire
+    else:
+        await ctx.send("❓ Précise le module : `!update voc`, `!update sav`, `!update notif` ou `!update aide`.")
 
 @bot.command()
 async def force_almanax(ctx):
