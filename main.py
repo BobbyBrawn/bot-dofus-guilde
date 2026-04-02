@@ -128,101 +128,66 @@ class GoalModal(discord.ui.Modal):
         self.add_item(self.goal)
 
     async def on_submit(self, interaction):
-        # 1. Réponse flash pour Discord
-        await interaction.response.send_message("⌛ Préparation de ton escouade...", ephemeral=True)
+        # 1. Silence radio immédiat
+        await interaction.response.defer(ephemeral=True)
         
         list_chan = bot.get_channel(ID_SALON_LISTE_DEMANDES)
         role = interaction.guild.get_role(ROLE_ENTRAIDE)
-
-        # 2. NOM DYNAMIQUE DU FIL : "Cible - Pseudo"
-        # On coupe à 80 caractères max pour éviter les bugs de Discord
+        
+        # 2. Création du fil privé (ID_DEMANDE = thread.id)
         thread_name = f"{self.goal.value[:80]} - {interaction.user.display_name}"
-
-        # 3. Création du FIL PRIVÉ
-        thread = await list_chan.create_thread(
-            name=thread_name,
-            type=discord.ChannelType.private_thread
-        )
-
-        # 4. On ajoute le demandeur
+        thread = await list_chan.create_thread(name=thread_name, type=discord.ChannelType.private_thread)
+        
+        # 3. On met le demandeur dedans
         await thread.add_user(interaction.user)
 
-        # 5. Envoi de l'annonce publique
+        # 4. Envoi de l'annonce dans la LISTE avec le bouton "Dispo"
         announcement = await list_chan.send(
             content=f"{role.mention if role else ''}\n📋 **MISSION : {self.category}**\n**Demandeur** : {interaction.user.display_name}\n**Objectif** : {self.goal.value}",
             view=MissionView(thread.id)
         )
 
-        # 6. MAPPING (Mémoire)
+        # 5. MAPPING : On associe l'ID du fil à l'ID du message d'annonce dans le JSON
         data = load_data()
         data["active_missions"][str(thread.id)] = announcement.id
         save_data(data)
 
-        # 7. BOUTON ROUGE (On le crée proprement ici)
+        # 6. Création du bouton rouge "Mission terminée !"
         view_f = discord.ui.View(timeout=None)
-        # On met un custom_id unique avec l'ID du fil
-        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger, custom_id=f"finish_{thread.id}")
+        btn_f = discord.ui.Button(label="Mission terminée !", style=discord.ButtonStyle.danger)
 
+        # La fonction de suppression liée au bouton
         async def fini_cb(i_end):
-            # Seul le demandeur peut fermer
+            # Seul le demandeur peut cliquer
             if i_end.user.id == interaction.user.id:
                 current_data = load_data()
+                # On récupère l'ID du message d'annonce grâce à l'ID du fil
                 msg_id = current_data["active_missions"].get(str(thread.id))
                 
                 if msg_id:
                     try:
-                        # Nettoyage de l'annonce publique
+                        # On supprime l'annonce dans #liste-demande-aide
                         m_del = await list_chan.fetch_message(msg_id)
                         await m_del.delete()
                     except: pass
+                    # On nettoie le JSON
                     del current_data["active_missions"][str(thread.id)]
                 
                 save_data(current_data)
-                # On prévient et on rase le fil
-                await i_end.response.send_message("Mission accomplie ! Suppression du canal...")
-                await asyncio.sleep(2)
+                await i_end.response.send_message("✅ Mission terminée, fermeture du canal...")
+                await asyncio.sleep(1)
                 await thread.delete()
             else:
-                await i_end.response.send_message("❌ Seul le demandeur peut clore la mission.", ephemeral=True)
+                await i_end.response.send_message("❌ Seul le demandeur peut clore cette mission.", ephemeral=True)
 
         btn_f.callback = fini_cb
         view_f.add_item(btn_f)
         
-        # 8. ENVOI DU BOUTON DANS LE FIL (Dernière étape)
+        # 7. ENVOI FINAL : Le bouton arrive dans le fil une fois que tout est mappé
         await thread.send(
-            content=f"🛡️ **Canal de Mission : {self.category}**\nObjectif : {self.goal.value}\n\n{interaction.user.mention}, clique sur le bouton ci-dessous une fois que c'est fini :",
+            content=f"⚔️ {interaction.user.mention}, ton canal d'entraide est prêt.\n\nClique sur le bouton ci-dessous quand la mission est finie pour tout supprimer :",
             view=view_f
         )
-        
-        # Confirmation finale
-        await interaction.edit_original_response(content=f"✅ Mission publiée ! Accès ici : <#{thread.id}>")
-
-        async def fini_cb(i_end):
-            # Seul celui qui a créé la demande peut fermer
-            if i_end.user.id == interaction.user.id:
-                current_data = load_data()
-                msg_id = current_data["active_missions"].get(str(thread.id))
-                
-                # Suppression du message d'annonce dans l'autre salon
-                if msg_id:
-                    try:
-                        m_del = await list_chan.fetch_message(msg_id)
-                        await m_del.delete()
-                    except: pass
-                    del current_data["active_missions"][str(thread.id)]
-                
-                save_data(current_data)
-                await thread.delete() # Suppression du fil privé
-            else:
-                await i_end.response.send_message("Seul le demandeur peut valider la fin !", ephemeral=True)
-
-        btn_f.callback = fini_cb
-        view_f.add_item(btn_f)
-        
-        await thread.send(f"⚔️ Bienvenue dans ton canal d'entraide {interaction.user.mention} !\nLes gens qui cliquent sur 'Dispo' apparaîtront ici.\n\nClique ici quand c'est fini :", view=view_f)
-        
-        # Mise à jour du message de confirmation pour l'utilisateur
-        await interaction.edit_original_response(content=f"✅ Mission publiée ! Tu as accès au fil privé : <#{thread.id}>")
 
 # --- VIEWS PERSISTANTES ---
 class SAVView(discord.ui.View):
