@@ -3,9 +3,10 @@ from discord.ext import commands, tasks
 import os
 import json
 import asyncio
+import requests
 from datetime import datetime, time, timedelta, timezone
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Tes IDs conservés) ---
 ID_CATEGORIE_VOCAL = 1488846909622849566
 ID_SALON_SAV = 1488846991026032711
 ID_SALON_DEMANDE_AIDE = 1488847060433375294
@@ -24,8 +25,6 @@ ROLE_ENTRAIDE = 1489021136011530282
 ROLE_ANNONCES = 1489021205011890410
 
 MY_USER_ID = 270182770163187712
-
-# Décalage UTC+2 pour Paris (Heure d'été)
 PARIS_TZ = timezone(timedelta(hours=2))
 
 intents = discord.Intents.default()
@@ -54,7 +53,15 @@ async def send_log(title, description, color=discord.Color.blue()):
         embed = discord.Embed(title=title, description=description, color=color, timestamp=datetime.now(PARIS_TZ))
         await channel.send(embed=embed)
 
-# --- ALMANAX ---
+# --- ALMANAX (VERSION DOFUSDUDE) ---
+def fetch_almanax_api():
+    today = datetime.now(PARIS_TZ).strftime("%Y-%m-%d")
+    url = f"https://api.dofusdu.de/dofus2/fr/almanax/{today}"
+    try:
+        r = requests.get(url, timeout=10)
+        return r.json() if r.status_code == 200 else None
+    except: return None
+
 async def post_almanax():
     channel = bot.get_channel(ID_SALON_ALMANAX)
     if channel:
@@ -62,20 +69,33 @@ async def post_almanax():
         today = datetime.now(PARIS_TZ).strftime("%Y-%m-%d")
         
         if data.get("last_almanax") != today:
+            api_data = fetch_almanax_api()
+            if not api_data: return # Évite de poster un truc vide si l'API crash
+
             role = channel.guild.get_role(ROLE_ALMANAX)
-            embed = discord.Embed(title="📅 Almanax du Jour", description=f"Meryde du {today}", color=discord.Color.gold())
-            embed.add_field(name="Offrande", value="🔍 Consultez le grimoire en jeu !", inline=False)
+            meryde = api_data['boss']['name']
+            
+            embed = discord.Embed(
+                title=f"📅 ALMANAX : {meryde.upper()}", 
+                description=f"**L'effet Méryde**\n{api_data['boss']['description']}",
+                color=discord.Color.gold()
+            )
+            embed.set_thumbnail(url=api_data['tribute']['item']['image_urls']['icon'])
+            embed.add_field(name="✨ Bonus", value=api_data['bonus']['description'], inline=False)
+            embed.add_field(name="🙏 Offrande", value=f"Récupérer **{api_data['tribute']['quantity']}x {api_data['tribute']['item']['name']}** et rapporter l'offrande à Théodoran Ax.", inline=False)
+            
             content = f"{role.mention}" if role else ""
             await channel.send(content=content, embed=embed)
+            
             data["last_almanax"] = today
             save_data(data)
-            await send_log("📅 Almanax", "Message quotidien posté.")
+            await send_log("📅 Almanax", f"Message posté pour {meryde}.")
 
 @tasks.loop(time=time(hour=0, minute=1))
 async def almanax_loop():
     await post_almanax()
 
-# --- NOTIFICATIONS (Boutons) ---
+# --- NOTIFICATIONS ---
 class NotifView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     async def toggle_role(self, interaction, role_id):
@@ -131,7 +151,7 @@ class GoalModal(discord.ui.Modal):
                 await i.response.send_message("Trop rapide pour les points (min 5min).", ephemeral=True)
             else:
                 data = load_data()
-                uid = str(interaction.user.id)
+                uid = str(i.user.id)
                 data["points"][uid] = data["points"].get(uid, 0) + 1
                 save_data(data)
                 await i.response.send_message("Mission validée ! +1 point.", ephemeral=True)
@@ -176,10 +196,10 @@ async def update(ctx):
     save_data(data)
     await ctx.send("✅ Mise à jour effectuée.", delete_after=3)
 
-# --- SETUP ---
+# --- SETUP VIEWS ---
 class SAVView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Ticket", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Ticket", style=discord.ButtonStyle.danger, custom_id="sav_ticket")
     async def cb(self, i, b):
         t = await i.channel.create_thread(name=f"SAV-{i.user.display_name}", type=discord.ChannelType.private_thread)
         await t.send(f"🛡️ <@{MY_USER_ID}>, ticket de {i.user.mention}")
@@ -187,9 +207,9 @@ class SAVView(discord.ui.View):
 
 class CoopView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Succès", style=discord.ButtonStyle.success, custom_id="coop_succes")
     async def s(self, i, b): await i.response.send_modal(GoalModal("Succès"))
-    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Quête", style=discord.ButtonStyle.success, custom_id="coop_quete")
     async def q(self, i, b): await i.response.send_modal(GoalModal("Quête"))
 
 @bot.event
