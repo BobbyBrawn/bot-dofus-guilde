@@ -51,7 +51,7 @@ async def get_almanax_embed():
         
         if not bloc_dofus: return None
 
-        # --- 1. BONUS ---
+        # --- 1. BONUS (Nettoyage et Gras) ---
         more_div = bloc_dofus.find("div", class_="more")
         for b_tag in more_div.find_all("b"):
             b_tag.replace_with(f"**{b_tag.text}**")
@@ -62,39 +62,47 @@ async def get_almanax_embed():
         quete = more_infos.find("p").get_text().strip() if more_infos else "Quête"
         
         fleft = bloc_dofus.find("p", class_="fleft")
-        offrande_brute = fleft.get_text().strip() if fleft else "Offrande"
+        offrande = fleft.get_text().strip() if fleft else "Offrande"
 
-        # --- 3. MAGIE : RÉCUPÉRATION DE L'IMAGE DOFUSDB ---
-        # On extrait l'ID de l'item depuis l'URL d'Ankama (ex: 93001)
+        # --- 3. RÉCUPÉRATION DE L'IMAGE VIA ID ---
         img_tag = bloc_dofus.find("div", class_="more-infos-content").find("img")
         item_id = "0"
         if img_tag:
-            src = img_tag["src"]
-            # On cherche les chiffres dans l'URL de l'image
-            match = re.search(r'/(\d+)\.', src)
-            if match:
-                item_id = match.group(1)
-
-        # On construit l'URL de DofusDB (Images HD 200x200 ou plus)
-        # Si l'ID est trouvé, on utilise le CDN de DofusDB qui est super propre
+            match = re.search(r'/(\d+)\.', img_tag["src"])
+            if match: item_id = match.group(1)
+        
         image_hd = f"https://api.dofusdb.fr/img/items/{item_id}.png"
 
-        # --- CONSTRUCTION ---
+        # --- CONSTRUCTION DE L'EMBED AÉRÉ ---
         embed = discord.Embed(
-            title="📅 ALMANAX DU JOUR",
-            description=f"✨ **Bonus**\n{bonus_complet}\n\n🙏 **Offrande**\n**{quete}**\n{offrande_brute}",
+            title="📅  ALMANAX DU JOUR",
             color=0xF1C40F,
-            timestamp=datetime.now()
+            description="\u200b" # Ligne vide sous le titre pour aérer
         )
-        
-        # On remet en GRAND en bas, mais avec une image HD
+
+        # On utilise des Fields pour créer des blocs distincts
+        embed.add_field(
+            name="✨  BONUS", 
+            value=f"{bonus_complet}\n\u200b", # \n\u200b crée un vrai saut de ligne
+            inline=False
+        )
+
+        embed.add_field(
+            name="🙏  OFFRANDE", 
+            value=f"**{quete}**\n{offrande}\n\u200b", 
+            inline=False
+        )
+
+        # L'image HD en bas
         if item_id != "0":
             embed.set_image(url=image_hd)
             
+        embed.set_footer(text="WatcherBot • Source : Krosmoz & DofusDB")
+        
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur Image/Scraping : {e}")
+        print(f"❌ Erreur : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
