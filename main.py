@@ -46,51 +46,61 @@ async def get_almanax_embed():
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. MERYDE (Extraction sécurisée)
-        meryde_elem = soup.find("span", class_="title")
-        meryde = meryde_elem.get_text().strip() if meryde_elem else "MÉRYDE INCONNU"
-        
-        # 2. BONUS (On cherche la description de l'event)
-        bonus_elem = soup.find("div", id="almanax_event_desc")
-        bonus = bonus_elem.get_text(separator="\n").strip() if bonus_elem else "Pas de bonus trouvé aujourd'hui."
-        
-        # 3. OFFRANDE (On cherche l'item et la quête)
-        offrande = "Détails de l'offrande indisponibles."
+        # 1. NOM DU MERYDE
+        meryde_tag = soup.find("span", class_="title")
+        meryde = meryde_tag.get_text().strip() if meryde_tag else "MÉRYDE"
+
+        # 2. BONUS (On vire le texte inutile)
+        bonus_tag = soup.find("div", id="almanax_event_desc")
+        bonus = "Pas de bonus trouvé."
+        if bonus_tag:
+            # On prend le texte et on enlève les espaces/sauts de ligne en trop au début/fin
+            bonus = bonus_tag.get_text().strip()
+
+        # 3. OFFRANDE (On découpe précisément le texte "plus d'infos")
+        offrande_finale = "Détails non trouvés."
         item_img_url = None
         
-        offering_container = soup.find("div", class_="more")
-        if offering_container:
-            # On récupère l'image de l'item si elle existe
-            img_tag = offering_container.find("img")
-            if img_tag:
-                item_img_url = img_tag.get("src")
+        more_info = soup.find("div", class_="more")
+        if more_info:
+            # On récupère l'image de l'ITEM spécifiquement
+            img = more_info.find("img")
+            if img:
+                item_img_url = img.get("src")
             
-            # Nettoyage du texte de l'offrande
-            raw_text = offering_container.get_text(separator="\n").strip()
-            # On enlève les mots techniques du site
-            offrande = raw_text.replace("Récupérer", "").replace("Ramener", "").strip()
+            # On extrait les lignes et on ne garde que celles qui contiennent l'offrande
+            lines = [l.strip() for l in more_info.get_text(separator="\n").split("\n") if l.strip()]
+            # Souvent la quête est en premier, l'item en deuxième
+            if len(lines) >= 2:
+                offrande_finale = f"**{lines[0]}**\n{lines[1]}"
+            else:
+                offrande_finale = "\n".join(lines)
 
-        # --- CONSTRUCTION DE L'EMBED ---
+        # --- MISE EN PAGE DE L'EMBED ---
         embed = discord.Embed(
             title=f"📅 ALMANAX : {meryde.upper()}",
-            description=f"✨ **Bonus**\n\n{bonus}\n\n🙏 **Offrande**\n\n{offrande}",
+            description=(
+                f"✨ **Bonus**\n\n{bonus}\n\n"
+                f"**-------------------------------------------**\n\n"
+                f"🙏 **Offrande**\n\n{offrande_finale}"
+            ),
             color=0xF1C40F,
             timestamp=datetime.now()
         )
         
-        # Image du Méryde (Thumbnail)
-        illu_elem = soup.find("div", class_="illu")
-        if illu_elem and illu_elem.find("img"):
-            embed.set_thumbnail(url=illu_elem.find("img").get("src"))
+        # Image du Méryde en haut à droite (Thumbnail)
+        illu = soup.find("div", class_="illu")
+        if illu and illu.find("img"):
+            embed.set_thumbnail(url=illu.find("img").get("src"))
             
-        # Image de l'item (Grande image en bas)
+        # Image de l'OFFRANDE (Grande image en bas)
         if item_img_url:
             embed.set_image(url=item_img_url)
             
         return embed
 
     except Exception as e:
-        print(f"❌ Erreur Scraping : {e}")
+        print(f"❌ Erreur Mise en page : {e}")
         return None
 
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
