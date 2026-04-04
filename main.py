@@ -288,9 +288,12 @@ class SAVView(discord.ui.View):
 
 class VocalView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
+    
     @discord.ui.button(label="Nommer le salon", emoji="📝", style=discord.ButtonStyle.primary, custom_id="voc_name")
     async def rename(self, interaction, button):
-        if interaction.user.voice and interaction.user.voice.channel.id in temp_vocal_channels:
+        data = load_data() # AJOUT : Lire le JSON
+        # MODIF : Vérifier dans data["temp_vocaux"]
+        if interaction.user.voice and interaction.user.voice.channel.id in data.get("temp_vocaux", []):
             modal = discord.ui.Modal(title="Renommer ton salon")
             name_input = discord.ui.TextInput(label="Nouveau nom", placeholder="Ex: Donjon Korri", min_length=2, max_length=20)
             modal.add_item(name_input)
@@ -303,7 +306,9 @@ class VocalView(discord.ui.View):
 
     @discord.ui.button(label="Limiter les places", emoji="👥", style=discord.ButtonStyle.secondary, custom_id="voc_limit")
     async def limit(self, interaction, button):
-        if interaction.user.voice and interaction.user.voice.channel.id in temp_vocal_channels:
+        data = load_data() # AJOUT : Lire le JSON
+        # MODIF : Vérifier dans data["temp_vocaux"]
+        if interaction.user.voice and interaction.user.voice.channel.id in data.get("temp_vocaux", []):
             modal = discord.ui.Modal(title="Limite de places")
             limit_input = discord.ui.TextInput(label="Nombre (0-99)", min_length=1, max_length=2)
             modal.add_item(limit_input)
@@ -316,7 +321,7 @@ class VocalView(discord.ui.View):
             modal.on_submit = on_limit_submit
             await interaction.response.send_modal(modal)
         else: await interaction.response.send_message("Tu dois être dans TON salon vocal !", ephemeral=True)
-
+            
 class CoopView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="Succès", emoji="🏆", style=discord.ButtonStyle.success, custom_id="c_s_v2")
