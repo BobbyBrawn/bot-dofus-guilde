@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime, time, timedelta, timezone
 
 # --- CONFIGURATION ---
-ID_CATEGORIE_VOCAL = 1488846909622849566
+ID_CATEGORIE_VOCAL = 1314901449280454687
 ID_SALON_SAV = 1488846991026032711
 ID_SALON_DEMANDE_AIDE = 1488847060433375294
 ID_SALON_ALMANAX = 1488953370667647076
@@ -114,7 +114,7 @@ async def get_almanax_embed():
         if item_id != "0":
             embed.set_image(url=image_hd)
             
-        embed.set_footer(text="WatcherBot • Source : Krosmoz & DofusDB")
+        embed.set_footer(text="WatcherBot • @notifications_almanax")
         
         return embed
 
@@ -125,32 +125,44 @@ async def get_almanax_embed():
 @tasks.loop(time=time(hour=0, minute=1, tzinfo=PARIS_TZ))
 async def almanax_loop():
     channel = bot.get_channel(ID_SALON_ALMANAX)
-    if not channel: 
-        print("❌ Salon Almanax introuvable.")
-        return
+    if not channel: return
 
     embed = await get_almanax_embed()
     if embed:
-        await channel.send(content=f"<@&{ROLE_ALMANAX}>", embed=embed)
-    else:
-        print("❌ Impossible de générer l'embed Almanax.")
+        # On envoie le ping (pour la pastille rouge)
+        ping_msg = await channel.send(f"<@&{ROLE_ALMANAX}>")
+        
+        # On envoie l'image de l'Almanax juste après
+        await channel.send(embed=embed)
+        
+        # On attend 2 secondes et on supprime le texte bleu moche du ping
+        await asyncio.sleep(2)
+        await ping_msg.delete()
 
-# --- VOCAUX ---
-temp_vocal_channels = []
+# --- VOCAUX SÉCURISÉS (VOLUME JSON) ---
 @bot.event
 async def on_voice_state_update(member, before, after):
+    data = load_data()
+    
+    # Création de salon
     if after.channel and after.channel.id == ID_VOCAL_CREATOR:
         cat = bot.get_channel(ID_CATEGORIE_VOCAL)
         new_chan = await member.guild.create_voice_channel(name=f"🔊 {member.display_name}", category=cat)
         await member.move_to(new_chan)
-        temp_vocal_channels.append(new_chan.id)
-    if before.channel and before.channel.id in temp_vocal_channels:
+        
+        # On stocke l'ID dans le JSON au lieu d'une liste temporaire
+        data["temp_vocaux"].append(new_chan.id)
+        save_data(data)
+
+    # Nettoyage (On vérifie dans le JSON si c'est un de nos salons)
+    if before.channel and before.channel.id in data.get("temp_vocaux", []):
         if len(before.channel.members) == 0:
             try:
                 await before.channel.delete()
-                temp_vocal_channels.remove(before.channel.id)
+                data["temp_vocaux"].remove(before.channel.id)
+                save_data(data)
             except: pass
-
+                
 # --- NOTIFICATIONS (RÉACTIONS) ---
 @bot.event
 async def on_raw_reaction_add(payload):
